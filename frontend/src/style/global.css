@@ -1,0 +1,21 @@
+html,
+body,
+#root {
+  height: 100%;
+  width: 100%;
+}
+
+body {
+  background: #fff;
+  margin: 0;
+  padding: 0;
+  letter-spacing: 0.02rem;
+}
+
+/* 通用頁面容器：最大 1440，水平置中，兩側留白 */
+.app-container {
+  max-width: 1440px;
+  margin-inline: auto;
+  padding-inline: 16px; /* 可選：防貼邊 */
+  height: 100%;
+}

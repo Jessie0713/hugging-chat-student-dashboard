@@ -1,0 +1,8 @@
+fastapi
+uvicorn[standard]
+httpx
+python-dotenv
+sshtunnel
+pymysql
+paramiko<4
+motor
