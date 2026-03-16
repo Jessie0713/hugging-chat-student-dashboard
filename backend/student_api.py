@@ -6,7 +6,7 @@ import re
 from datetime import datetime, timezone
 from collections import Counter, defaultdict
 from typing import Any
-
+import json
 from fastapi import APIRouter, HTTPException, Query
 from bson import ObjectId
 
@@ -127,35 +127,134 @@ async def header(hfUserId: str):
 @router.post("/{hfUserId}/ai-advice")
 async def ai_advice(hfUserId: str):
     """
-    你想要「點了才分析」：就用 POST 觸發。
-    MVP：把 overview 摘要丟給 Azure OpenAI 產出建議
+    點擊後才觸發 AI 分析
+    回傳固定 JSON 結構，方便前端直接排版
     """
-    # [修正 1] 這裡原本寫 overview(hfUserId)，但你的函式叫 student_overview
     try:
         ov = await student_overview(hfUserId)
     except Exception as e:
-        return {"text": f"無法取得數據: {str(e)}"}
+        return {
+            "ok": False,
+            "intro": "",
+            "suggestions": [],
+            "plan": [],
+            "rawText": f"[student_overview error] {str(e)}",
+        }
 
-    # [建議] 稍微過濾一下資料，避免把 timeseries 等太長的資料丟給 AI 浪費 Token
-    prompt_data = {
-        "stats": ov.get("stats"),
-        "top_assistants": ov.get("assistantUsage", [])[:5],
-        "cefr_level": ov.get("cefrGroups")
-    }
+    try:
+        prompt_data = {
+            "stats": ov.get("stats"),
+            "top_assistants": ov.get("assistantUsage", [])[:5],
+            "cefr_groups": ov.get("cefrGroups", []),
+        }
+    except Exception as e:
+        return {
+            "ok": False,
+            "intro": "",
+            "suggestions": [],
+            "plan": [],
+            "rawText": f"[prompt_data error] {str(e)}",
+        }
 
-    prompt = f"""
-你是一個英文口說學習教練。請根據以下學生的整體資料，給 5 點可執行建議：
-- 建議要具體：包含「下一次對話要怎麼做」「要練什麼句型/策略」「注意什麼常見問題」
-- 也請給一個簡短的本週練習計畫（3 天）。
-資料如下（JSON）：
-{prompt_data}
+    try:
+        prompt = f"""
+你是一個英文口說學習教練，正在為學生學習儀表板產生建議。
+
+請根據提供的學生資料，輸出「有效 JSON」且只能輸出 JSON，
+不要輸出任何前言、說明、markdown、```json 或其他文字。
+
+請使用「繁體中文（台灣用語）」回答，不可使用簡體中文。
+
+JSON 格式必須完全符合下面結構：
+{{
+  "intro": "1到3句整體觀察，使用繁體中文",
+  "suggestions": [
+    "建議1",
+    "建議2",
+    "建議3",
+    "建議4",
+    "建議5"
+  ],
+  "plan": [
+    "Day 1 練習內容",
+    "Day 2 練習內容",
+    "Day 3 練習內容"
+  ]
+}}
+
+規則：
+1. intro 必須是字串
+2. suggestions 必須剛好 5 項
+3. plan 必須剛好 3 項
+4. 每項內容要簡潔、具體、可執行
+5. 一律使用繁體中文（台灣用語）
+6. 不可使用簡體中文
+7. 不要輸出 markdown，不要加註解，不要補充說明
+
+學生資料如下：
+{json.dumps(prompt_data, ensure_ascii=False, indent=2, default=str)}
 """.strip()
+    except Exception as e:
+        return {
+            "ok": False,
+            "intro": "",
+            "suggestions": [],
+            "plan": [],
+            "rawText": f"[prompt build error] {str(e)}",
+        }
 
-    # [修正 2] 確保上面有 import azure_chat，這裡才能運作
     try:
         text = await azure_chat(prompt)
-        return {"text": text}
+        cleaned = (text or "").strip()
+
+        # 清掉模型偶爾偷加的 code fence
+        cleaned = re.sub(r"^```json\s*", "", cleaned)
+        cleaned = re.sub(r"^```\s*", "", cleaned)
+        cleaned = re.sub(r"\s*```$", "", cleaned)
+
+        parsed = json.loads(cleaned)
+
+        intro = parsed.get("intro", "")
+        suggestions = parsed.get("suggestions", [])
+        plan = parsed.get("plan", [])
+
+        if not isinstance(intro, str):
+            intro = ""
+
+        if not isinstance(suggestions, list):
+            suggestions = []
+
+        if not isinstance(plan, list):
+            plan = []
+
+        suggestions = [str(x).strip() for x in suggestions if str(x).strip()]
+        plan = [str(x).strip() for x in plan if str(x).strip()]
+
+        suggestions = suggestions[:5]
+        plan = plan[:3]
+
+        while len(suggestions) < 5:
+            suggestions.append("下一次對話時，請用完整句回答並補充一個原因或例子。")
+
+        while len(plan) < 3:
+            plan.append("安排 10 分鐘英文口說練習，並用 3 句完整句描述同一主題。")
+
+        return {
+            "ok": True,
+            "intro": intro.strip(),
+            "suggestions": suggestions,
+            "plan": plan,
+            "rawText": cleaned,
+        }
+
     except Exception as e:
+        return {
+            "ok": False,
+            "intro": "",
+            "suggestions": [],
+            "plan": [],
+            "rawText": f"[ai_advice parse error] {str(e)}",
+        }
         return {"text": f"AI 分析發生錯誤: {str(e)}"}
 
 @router.get("/{hfUserId}/badges")

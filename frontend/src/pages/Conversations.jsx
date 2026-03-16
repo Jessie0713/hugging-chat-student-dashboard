@@ -76,7 +76,7 @@ export default function Conversations() {
 
   // AI Analysis States
   const [aiLoading, setAiLoading] = useState(false)
-  const [aiText, setAiText] = useState('')
+  const [aiAdvice, setAiAdvice] = useState(null)
 
   // 1. 抓取聊天列表
   useEffect(() => {
@@ -125,7 +125,6 @@ export default function Conversations() {
             </Box>
 
             {/* 上方 AI 分析區塊 (模仿截圖置中與按鈕樣式) */}
-
             <Box
               sx={{
                 display: 'flex',
@@ -134,7 +133,7 @@ export default function Conversations() {
                 gap: 2,
               }}
             >
-              {!aiText && (
+              {!aiAdvice && (
                 <>
                   <AutoAwesomeIcon
                     sx={{ fontSize: 40, color: 'primary.main', opacity: 0.8 }}
@@ -142,36 +141,213 @@ export default function Conversations() {
                   <Typography variant='h6' sx={{ fontWeight: 600 }}>
                     AI 語法健檢報告
                   </Typography>
-                  <Typography variant='body2' color='text.secondary'>
-                    點擊下方按鈕，讓 AI 分析您 整體 的對話並找出改進點。
+                  <Typography
+                    variant='body2'
+                    color='text.secondary'
+                    sx={{ textAlign: 'center' }}
+                  >
+                    點擊下方按鈕，讓 AI 分析您整體的對話並找出改進點。
                   </Typography>
                 </>
               )}
 
-              {aiText && (
+              {aiAdvice && (
                 <Box
                   sx={{
-                    textAlign: 'left',
                     width: '100%',
-                    bgcolor: '#f5f9ff',
-                    p: 3,
-                    borderRadius: 2,
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 2,
+                    mt: 1,
                   }}
                 >
-                  <Typography
-                    variant='subtitle1'
-                    fontWeight='bold'
-                    gutterBottom
+                  <Box
+                    sx={{
+                      width: '100%',
+                      bgcolor: '#f5f9ff',
+                      border: '1px solid #dbe7ff',
+                      p: 3,
+                      borderRadius: 3,
+                    }}
                   >
-                    分析結果：
-                  </Typography>
-                  <Typography sx={{ whiteSpace: 'pre-wrap', lineHeight: 1.8 }}>
-                    {aiText}
-                  </Typography>
+                    <Typography
+                      variant='subtitle1'
+                      sx={{ fontWeight: 700, mb: 1 }}
+                    >
+                      整體觀察
+                    </Typography>
+                    <Typography
+                      sx={{ whiteSpace: 'pre-wrap', lineHeight: 1.8 }}
+                    >
+                      {aiAdvice.intro || '目前沒有分析摘要。'}
+                    </Typography>
+                  </Box>
+
+                  <Box
+                    sx={{
+                      width: '100%',
+                      bgcolor: '#ffffff',
+                      border: '1px solid #eee',
+                      p: 3,
+                      borderRadius: 3,
+                    }}
+                  >
+                    <Typography
+                      variant='subtitle1'
+                      sx={{ fontWeight: 700, mb: 2 }}
+                    >
+                      可執行建議
+                    </Typography>
+
+                    <Stack spacing={1.5}>
+                      {(aiAdvice.suggestions || []).map((item, idx) => (
+                        <Box
+                          key={idx}
+                          sx={{
+                            display: 'flex',
+                            alignItems: 'flex-start',
+                            gap: 1.5,
+                            bgcolor: '#fafafa',
+                            borderRadius: 2,
+                            p: 1.5,
+                          }}
+                        >
+                          <Box
+                            sx={{
+                              minWidth: 26,
+                              width: 26,
+                              height: 26,
+                              borderRadius: '50%',
+                              bgcolor: 'primary.main',
+                              color: '#fff',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              fontSize: 13,
+                              fontWeight: 700,
+                              mt: '2px',
+                            }}
+                          >
+                            {idx + 1}
+                          </Box>
+
+                          <Typography sx={{ lineHeight: 1.8 }}>
+                            {item}
+                          </Typography>
+                        </Box>
+                      ))}
+                    </Stack>
+                  </Box>
+
+                  <Box
+                    sx={{
+                      width: '100%',
+                      bgcolor: '#fffaf2',
+                      border: '1px solid #f4dfb5',
+                      p: 3,
+                      borderRadius: 3,
+                    }}
+                  >
+                    <Typography
+                      variant='subtitle1'
+                      sx={{ fontWeight: 700, mb: 2 }}
+                    >
+                      本週 3 天練習計畫
+                    </Typography>
+
+                    <Stack spacing={1.5}>
+                      {(aiAdvice.plan || []).map((item, idx) => (
+                        <Box
+                          key={idx}
+                          sx={{
+                            display: 'flex',
+                            alignItems: 'flex-start',
+                            gap: 1.5,
+                          }}
+                        >
+                          <Chip
+                            label={`Day ${idx + 1}`}
+                            size='small'
+                            sx={{
+                              bgcolor: '#ffe7bf',
+                              color: '#8a5500',
+                              fontWeight: 700,
+                              mt: '2px',
+                            }}
+                          />
+                          <Typography sx={{ lineHeight: 1.8 }}>
+                            {item}
+                          </Typography>
+                        </Box>
+                      ))}
+                    </Stack>
+                  </Box>
+
+                  {!aiAdvice.ok && (
+                    <Box
+                      sx={{
+                        width: '100%',
+                        bgcolor: '#fff4f4',
+                        border: '1px solid #f1c7c7',
+                        p: 2,
+                        borderRadius: 2,
+                      }}
+                    >
+                      <Typography variant='body2' sx={{ color: '#b42318' }}>
+                        分析過程發生問題，以下為除錯訊息：
+                      </Typography>
+                      <Typography
+                        sx={{ whiteSpace: 'pre-wrap', mt: 1, fontSize: 13 }}
+                      >
+                        {aiAdvice.rawText}
+                      </Typography>
+                    </Box>
+                  )}
+
+                  <Box
+                    sx={{ display: 'flex', justifyContent: 'center', mt: 1 }}
+                  >
+                    <Button
+                      variant='outlined'
+                      startIcon={aiLoading ? null : <AutoAwesomeIcon />}
+                      disabled={aiLoading}
+                      onClick={async () => {
+                        setAiLoading(true)
+                        try {
+                          const res = await apiPost(
+                            `/api/student/${hfUserId}/ai-advice`,
+                          )
+
+                          setAiAdvice({
+                            intro: res.intro || '',
+                            suggestions: Array.isArray(res.suggestions)
+                              ? res.suggestions
+                              : [],
+                            plan: Array.isArray(res.plan) ? res.plan : [],
+                            rawText: res.rawText || '',
+                            ok: !!res.ok,
+                          })
+                        } catch (e) {
+                          setAiAdvice({
+                            intro: '',
+                            suggestions: [],
+                            plan: [],
+                            rawText: String(e),
+                            ok: false,
+                          })
+                        } finally {
+                          setAiLoading(false)
+                        }
+                      }}
+                      sx={{ borderRadius: 20, px: 3 }}
+                    >
+                      {aiLoading ? '分析中...' : '重新分析'}
+                    </Button>
+                  </Box>
                 </Box>
               )}
 
-              {!aiText && (
+              {!aiAdvice && (
                 <Button
                   variant='contained'
                   size='large'
@@ -184,9 +360,24 @@ export default function Conversations() {
                       const res = await apiPost(
                         `/api/student/${hfUserId}/ai-advice`,
                       )
-                      setAiText(res.text || '')
+
+                      setAiAdvice({
+                        intro: res.intro || '',
+                        suggestions: Array.isArray(res.suggestions)
+                          ? res.suggestions
+                          : [],
+                        plan: Array.isArray(res.plan) ? res.plan : [],
+                        rawText: res.rawText || '',
+                        ok: !!res.ok,
+                      })
                     } catch (e) {
-                      alert('分析失敗: ' + e)
+                      setAiAdvice({
+                        intro: '',
+                        suggestions: [],
+                        plan: [],
+                        rawText: String(e),
+                        ok: false,
+                      })
                     } finally {
                       setAiLoading(false)
                     }
@@ -212,7 +403,7 @@ export default function Conversations() {
                 alignItems: 'center',
               }}
             >
-              <Typography variant='h6' sx={{ fontWeight: 700 }}>
+              <Typography variant='h5' sx={{ fontWeight: 700 }}>
                 聊天紀錄
               </Typography>
               <Typography
@@ -287,7 +478,7 @@ export default function Conversations() {
           <Card variant='outlined' sx={commonCardStyle}>
             {/* 標題區 (使用 CardContent 的 padding 或是自己切 Box 都可以，這裡為了對齊左邊，建議自己切) */}
             <Box sx={{ p: 2, borderBottom: '1px solid #eee' }}>
-              <Typography variant='h6' sx={{ fontWeight: 700 }}>
+              <Typography variant='h5' sx={{ fontWeight: 700 }}>
                 常用情境對話 Top 5
               </Typography>
             </Box>
