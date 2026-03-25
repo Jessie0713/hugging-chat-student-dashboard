@@ -263,8 +263,71 @@ async def badges(hfUserId: str):
     return {"hfUserId": hfUserId, "badges": []}
 # backend/student_api.py
 
+
 @router.get("/{hfUserId}/conversations")
 async def conversations(hfUserId: str, skip: int = 0, limit: int = Query(20, ge=1, le=100)):
+    db = get_db()
+    user = await find_user_by_hf_user_id(db, hfUserId)
+    if not user:
+        raise HTTPException(404, "User not found")
+
+    user_oid = user["_id"]
+
+    docs = await (
+        db["conversations"]
+        .find({"userId": user_oid})
+        .sort([("updatedAt", -1), ("_id", -1)])
+        .skip(skip)
+        .limit(limit)
+        .to_list(length=limit)
+    )
+
+    assistant_ids = [doc.get("assistantId") for doc in docs if doc.get("assistantId")]
+    name_map = await build_assistant_name_map(db, assistant_ids)
+
+    items = []
+    for doc in docs:
+        raw_messages = doc.get("messages", []) or []
+        messages = []
+
+        for m in raw_messages:
+            content = (m.get("content") or "").strip()
+            if m.get("from") in ("user", "assistant") and content:
+                messages.append({
+                    "from": m.get("from"),
+                    "content": content,
+                    "isVoice": bool(m.get("isVoice", False)),
+                })
+
+        aid = doc.get("assistantId")
+        aid_str = str(aid) if aid else None
+
+        cefr = doc.get("cefr") or {}
+
+        items.append({
+            "_id": str(doc["_id"]),
+            "assistantId": aid_str,
+            "assistantName": name_map.get(aid_str, "Unknown Assistant") if aid_str else "Unknown Assistant",
+            "updatedAt": doc.get("updatedAt"),
+            "messages": messages,
+            "cefr": {
+                "levelKey": cefr.get("levelKey"),
+                "nextLevelKey": cefr.get("nextLevelKey"),
+                "confidence": cefr.get("confidence"),
+                "updatedAt": cefr.get("updatedAt"),
+                "assessedUserTurns": cefr.get("assessedUserTurns"),
+                "assistantId": str(cefr.get("assistantId")) if cefr.get("assistantId") else None,
+                "advice": cefr.get("advice") or {},
+            } if cefr else None,
+        })
+
+    total = await db["conversations"].count_documents({"userId": user_oid})
+    return {
+        "total": total,
+        "skip": skip,
+        "limit": limit,
+        "items": items,
+    }
     db = get_db()
     user = await find_user_by_hf_user_id(db, hfUserId)
     if not user:
