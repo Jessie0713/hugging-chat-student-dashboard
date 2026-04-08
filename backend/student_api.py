@@ -621,6 +621,44 @@ def day_key(dt: datetime | None) -> str:
         dt = dt.replace(tzinfo=timezone.utc)
     return dt.astimezone(timezone.utc).strftime("%Y-%m-%d")
 
+def conversation_active_duration_min(
+    messages: list[dict],
+    idle_cutoff_seconds: int = 300,
+) -> float:
+    """
+    計算有效互動時間：
+    只累加相鄰訊息間隔 <= idle_cutoff_seconds 的時間。
+    預設 300 秒 = 5 分鐘。
+    """
+    if not messages:
+        return 0.0
+
+    times: list[datetime] = []
+
+    for m in messages:
+        ts = (
+            m.get("updatedAt")
+            or m.get("createdAt")
+            or m.get("time")
+            or m.get("timestamp")
+        )
+        if isinstance(ts, datetime):
+            if ts.tzinfo is None:
+                ts = ts.replace(tzinfo=timezone.utc)
+            times.append(ts)
+
+    if len(times) < 2:
+        return 0.0
+
+    times.sort()
+
+    total_seconds = 0.0
+    for i in range(1, len(times)):
+        gap = (times[i] - times[i - 1]).total_seconds()
+        if 0 < gap <= idle_cutoff_seconds:
+            total_seconds += gap
+
+    return total_seconds / 60.0
 # ----------------------------
 # Overview API
 # ----------------------------
@@ -671,14 +709,9 @@ async def student_overview(hfUserId: str):
         turns = sum(1 for m in msgs if (m.get("from") == "user" and m.get("content")))
         turns_list.append(turns)
 
-        # duration: updatedAt - createdAt (minutes)
-        created = c.get("createdAt")
-        updated = c.get("updatedAt")
-        if created and updated:
-            try:
-                duration_list.append((updated - created).total_seconds() / 60.0)
-            except Exception:
-                pass
+        # active duration: ignore long idle gaps
+        active_duration_min = conversation_active_duration_min(msgs, idle_cutoff_seconds=300)
+        duration_list.append(active_duration_min)
 
         for m in msgs:
             if m.get("from") in ("user", "assistant"):
@@ -719,20 +752,16 @@ async def student_overview(hfUserId: str):
         for c in subset:
             msgs = c.get("messages") or []
             subset_turns.append(sum(1 for m in msgs if m.get("from") == "user" and m.get("content")))
-            created = c.get("createdAt")
-            updated = c.get("updatedAt")
-            if created and updated:
-                try:
-                    subset_durs.append((updated - created).total_seconds() / 60.0)
-                except Exception:
-                    pass
+
+            subset_durs.append(
+                conversation_active_duration_min(msgs, idle_cutoff_seconds=300)
+            )
 
             for m in msgs:
                 if m.get("from") in ("user", "assistant"):
                     t = (m.get("content") or "").strip()
                     if t:
                         subset_text_parts.append(t)
-
         er, lx = analyze_text_metrics("\n".join(subset_text_parts))
         ts_english.append(round(er, 4))
         ts_lex.append(round(lx, 4))
