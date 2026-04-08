@@ -700,7 +700,7 @@ async def student_overview(hfUserId: str):
         "avgTurns": avg_turns,
         "avgDurationMin": avg_duration,
     }
-
+   
     # ---- timeseries by day (use updatedAt if possible)
     by_day: dict[str, list[dict]] = defaultdict(list)
     for c in convs:
@@ -779,10 +779,38 @@ async def student_overview(hfUserId: str):
             "title": level,
             "assistants": groups[level],
         })
+    # ---- badge data
+    badge = user.get("badge") or {}
+    badge_stats = badge.get("stats") or {}
+
+    earned_ids = badge.get("earnedIds") or []
+    inbox = badge.get("inbox") or []
+
+    badge_payload = {
+        "earnedIds": earned_ids if isinstance(earned_ids, list) else [],
+        "inbox": inbox if isinstance(inbox, list) else [],
+        "stats": {
+            "lastActiveDate": badge_stats.get("lastActiveDate"),
+            "streakDays": int(badge_stats.get("streakDays") or 0),
+            "totalMessages": int(badge_stats.get("totalMessages") or 0),
+            "voiceCount": int(badge_stats.get("voiceCount") or 0),
+            "levelUpCount": int(badge_stats.get("levelUpCount") or 0),
+            "assistantsUsed": badge_stats.get("assistantsUsed") or [],
+        },
+    }
+
 
     return {
         "hfUserId": normalize_hf_user_id(hfUserId),
-        "stats": stats,
+        "stats": {
+            **stats,
+            "streakDays": badge_payload["stats"]["streakDays"],
+            "totalMessages": badge_payload["stats"]["totalMessages"],
+            "voiceCount": badge_payload["stats"]["voiceCount"],
+            "levelUpCount": badge_payload["stats"]["levelUpCount"],
+            "assistantsUsed": badge_payload["stats"]["assistantsUsed"],
+            "lastActiveDate": badge_payload["stats"]["lastActiveDate"],
+        },"badge": badge_payload,
         "timeseries": timeseries,
         "assistantUsage": assistant_usage,
         "cefrGroups": cefr_groups,

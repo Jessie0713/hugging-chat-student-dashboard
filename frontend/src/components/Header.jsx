@@ -110,7 +110,7 @@ export default function StudentHeader() {
               to={`/student/${hfUserId}/conversations`}
               label='對話分析'
             />
-            <NavItem to={`/student/${hfUserId}/badges`} label='獎章' />
+            {/* <NavItem to={`/student/${hfUserId}/badges`} label='獎章' /> */}
           </Box>
 
           <Box sx={{ flex: 1 }} />

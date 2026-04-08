@@ -18,7 +18,7 @@ from mongo_db import get_client, get_db,ping_mongo
 
 app = FastAPI(title="HuggingChat Dashboard API")
 app.include_router(student_router)
-frontend_origin = os.getenv("FRONTEND_ORIGIN", "http://localhost:5173")
+frontend_origin = os.getenv("FRONTEND_ORIGIN", "http://localhost:5174")
 
 app.add_middleware(
     CORSMiddleware,
