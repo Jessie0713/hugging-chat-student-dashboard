@@ -1,6 +1,8 @@
-const API_BASE = `${window.location.protocol}//${window.location.hostname}:8000`
+// 將 API_BASE 設為空字串，讓瀏覽器自動對當前網域發出請求
+const API_BASE = '' 
 
 export async function apiGet(url) {
+  // 實際上執行的是 fetch('/api/m7/...')
   const r = await fetch(`${API_BASE}${url}`)
   if (!r.ok) throw new Error(await r.text())
   return r.json()

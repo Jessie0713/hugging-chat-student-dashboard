@@ -6,11 +6,16 @@ export default defineConfig({
   server: {
     host: '0.0.0.0',
     port: 5174,
+    // 允許你正式上線的網域，避免 Vite 開發伺服器擋掉外部 Host
     allowedHosts: [
       'hugging-chat-dashboard.azure.feis.cs.nthu.edu.tw',
     ],
+    // 代理設定：解決本地開發時的前後端分離跨域問題
     proxy: {
-      '/api': { target: 'http://localhost:8000', changeOrigin: true },
+      '/api': { 
+        target: 'http://localhost:8000', 
+        changeOrigin: true 
+      },
     },
   },
   preview: {
