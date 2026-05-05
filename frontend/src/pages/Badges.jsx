@@ -34,18 +34,30 @@ function BadgeSlot({ unlocked, title }) {
 }
 
 export default function Badges() {
-  const { hfUserId } = useParams()
+  const { source, hfUserId } = useParams()
   const [data, setData] = useState(null)
   const [err, setErr] = useState('')
   const loading = !data && !err
 
   useEffect(() => {
-    setErr('')
-    setData(null)
-    apiGet(`/api/student/${hfUserId}/badges`)
-      .then(setData)
-      .catch((e) => setErr(String(e)))
-  }, [hfUserId])
+    let cancelled = false
+    Promise.resolve().then(() => {
+      if (!cancelled) {
+        setErr('')
+        setData(null)
+      }
+    })
+    apiGet(`/api/${source}/student/${hfUserId}/badges`)
+      .then((d) => {
+        if (!cancelled) setData(d)
+      })
+      .catch((e) => {
+        if (!cancelled) setErr(String(e))
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [source, hfUserId])
 
   const slots = useMemo(() => {
     const badges = data?.badges || []

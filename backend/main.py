@@ -10,19 +10,34 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from student_api import router as student_router
+from cefr_api import router as cefr_router
 from db import fetch_one
 from azure_openai import azure_chat
-from mongo_db import get_client, get_db,ping_mongo
+from mongo_db import get_client_by_source, ping_mongo_by_source
 
 
 
 app = FastAPI(title="HuggingChat Dashboard API")
 app.include_router(student_router)
+app.include_router(cefr_router)
 frontend_origin = os.getenv("FRONTEND_ORIGIN", "http://localhost:5174")
+frontend_origins = [x.strip() for x in frontend_origin.split(",") if x.strip()]
+if not frontend_origins:
+    frontend_origins = ["http://localhost:5174"]
+
+# Dev-friendly defaults: allow common local ports/hosts without editing .env
+for extra in (
+    "http://localhost:5174",
+    "http://localhost:5175",
+    "http://127.0.0.1:5174",
+    "http://127.0.0.1:5175",
+):
+    if extra not in frontend_origins:
+        frontend_origins.append(extra)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[frontend_origin],
+    allow_origins=frontend_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -49,43 +64,16 @@ async def analyze(req: AnalyzeReq):
     text = await azure_chat(req.prompt)
     return {"text": text}
 
-@app.get("/api/mongo/databases")
-async def mongo_databases():
-    client = get_client()
+@app.get("/api/{source}/mongo/databases")
+async def mongo_databases(source: str):
+    client = get_client_by_source(source)
     dbs = await client.list_database_names()
-    return {"databases": dbs}
+    return {"source": (source or "").strip().lower(), "databases": dbs}
 
-@app.get("/api/mongo/ping")
-async def mongo_ping():
+@app.get("/api/{source}/mongo/ping")
+async def mongo_ping(source: str):
     try:
-        return await ping_mongo()
+        return await ping_mongo_by_source(source)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-    
-
-    # URL 可能帶符號，保險先抽數字
-    digits = re.sub(r"\D", "", hfUserId or "")
-    if not digits:
-        raise HTTPException(status_code=400, detail="Invalid user id")
-
-    user_id = int(digits)
-
-    # ✅ 最安全做法：fetch_one 支援參數化
-    # row = fetch_one(
-    #   "SELECT firstname, lastname, email FROM mdl_user WHERE id=%s",
-    #   (user_id,)
-    # )
-
-    # ✅ 如果你目前 fetch_one 不支援 params：因為我們已經 int()，也不會注入
-    row = fetch_one(f"SELECT firstname, lastname, email FROM mdl_user WHERE id = {user_id}")
-
-    if not row:
-        raise HTTPException(status_code=404, detail="Moodle user not found")
-
-    return {
-        "firstname": row.get("firstname"),
-        "lastname": row.get("lastname"),
-        "email": row.get("email"),
-        "id": user_id,
-    }
 

@@ -6,12 +6,15 @@ import {
   Button,
   Card,
   CardContent,
+  ToggleButton,
+  ToggleButtonGroup,
   TextField,
   Typography,
 } from '@mui/material'
 
 export default function Home() {
   const [id, setId] = useState('')
+  const [source, setSource] = useState('m7')
   const navigate = useNavigate()
 
   return (
@@ -27,11 +30,29 @@ export default function Home() {
 
           <TextField
             fullWidth
+            id='hfUserId'
+            name='hfUserId'
             label='hfUserId'
             value={id}
             onChange={(e) => setId(e.target.value)}
             placeholder='例如 154708'
           />
+
+          <Box sx={{ mt: 2 }}>
+            <Typography variant='body2' sx={{ opacity: 0.8, mb: 1 }}>
+              資料來源
+            </Typography>
+            <ToggleButtonGroup
+              size='small'
+              value={source}
+              exclusive
+              onChange={(_, v) => v && setSource(v)}
+              sx={{ '& .MuiToggleButton-root': { fontWeight: 800 } }}
+            >
+              <ToggleButton value='m7'>m7</ToggleButton>
+              <ToggleButton value='huggingchat'>huggingchat</ToggleButton>
+            </ToggleButtonGroup>
+          </Box>
 
           <Button
             sx={{ mt: 2 }}
@@ -39,7 +60,9 @@ export default function Home() {
             variant='contained'
             onClick={() => {
               if (!id.trim()) return
-              navigate(`/student/${encodeURIComponent(id.trim())}/overview`)
+              navigate(
+                `/${source}/student/${encodeURIComponent(id.trim())}/overview`,
+              )
             }}
           >
             進入

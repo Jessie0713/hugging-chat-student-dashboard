@@ -19,6 +19,8 @@ import {
   AccordionSummary,
   AccordionDetails,
   Avatar,
+  TextField,
+  MenuItem,
 } from '@mui/material'
 import HelpOutlineRoundedIcon from '@mui/icons-material/HelpOutlineRounded'
 import ExpandMoreRoundedIcon from '@mui/icons-material/ExpandMoreRounded'
@@ -39,6 +41,10 @@ const CEFR_TITLES = {
   C2: 'C2 (精通級)',
   C1C2: 'C1-C2 (高階)',
 }
+
+// CEFR numeric (0~5) -> levelKey；用來畫 Y 軸 tick
+const LEVEL_KEYS = ['PreA1', 'A1', 'A2', 'B1', 'B2', 'C1C2']
+const levelTickFormat = (v) => LEVEL_KEYS[Math.round(Number(v))] ?? ''
 
 function orderIndex(levelKey) {
   const i = CEFR_ORDER.indexOf(levelKey)
@@ -197,6 +203,175 @@ function MetricToggle({ value, label, tip }) {
   )
 }
 
+// CEFR 趨勢圖（共用元件）
+function CefrTrendChart({
+  source,
+  mongoUserId,
+  assistantId = null,
+  assistantName = '',
+  mode = 'daily', // 'raw' | 'daily'
+  start = null,
+  end = null,
+  height = 200,
+  showAxisLabels = true,
+}) {
+  const [points, setPoints] = useState(null)
+  const [err, setErr] = useState('')
+
+  useEffect(() => {
+    if (!mongoUserId) return
+    let cancelled = false
+
+    const params = new URLSearchParams()
+    params.set('user_id', mongoUserId)
+    if (source) params.set('source', source)
+    if (assistantId) params.set('assistant_id', assistantId)
+    if (start) params.set('start', new Date(start).toISOString())
+    if (end) params.set('end', new Date(end).toISOString())
+
+    const path = mode === 'raw' ? '/api/cefr/trends' : '/api/cefr/trends/daily'
+
+    setPoints(null)
+    setErr('')
+
+    apiGet(`${path}?${params.toString()}`)
+      .then((d) => {
+        if (cancelled) return
+        if (mode === 'raw') {
+          const arr = Array.isArray(d?.points) ? d.points : []
+          setPoints(
+            arr
+              .filter((p) => p.ts && p.level != null)
+              .map((p) => ({
+                x: new Date(p.ts),
+                y: Number(p.level),
+                levelKey: p.levelKey,
+                confidence: p.confidence,
+                assistantId: p.assistantId,
+                conversationId: p.conversationId,
+              })),
+          )
+        } else {
+          const arr = Array.isArray(d?.series) ? d.series : []
+          setPoints(
+            arr
+              .filter((s) => s.date && s.value != null)
+              .map((s) => ({
+                x: new Date(`${s.date}T00:00:00`),
+                y: Number(s.value),
+                levelKey: s.levelKeyRounded,
+                confidence: s.confidenceAvg,
+                count: s.count,
+                date: s.date,
+              })),
+          )
+        }
+      })
+      .catch((e) => {
+        if (!cancelled) setErr(String(e))
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [source, mongoUserId, assistantId, mode, start, end])
+
+  if (err) {
+    return (
+      <Box sx={{ height, display: 'grid', placeItems: 'center' }}>
+        <Typography variant='caption' color='error'>
+          趨勢圖讀取失敗
+        </Typography>
+      </Box>
+    )
+  }
+
+  if (points === null) {
+    return (
+      <Box sx={{ height, display: 'grid', placeItems: 'center' }}>
+        <CircularProgress size={20} />
+      </Box>
+    )
+  }
+
+  if (points.length === 0) {
+    return (
+      <Box sx={{ height, display: 'grid', placeItems: 'center' }}>
+        <Typography variant='caption' sx={{ opacity: 0.6 }}>
+          目前沒有 CEFR 紀錄
+        </Typography>
+      </Box>
+    )
+  }
+
+  // 單點時 LineChart 不會畫線；在前後加同 y 值 padding 點，視覺上仍像一條線
+  const xs = points.map((p) => p.x)
+  const ys = points.map((p) => p.y)
+
+  return (
+    <LineChart
+      xAxis={[
+        {
+          data: xs,
+          scaleType: 'time',
+          valueFormatter: (v) => {
+            const d = v instanceof Date ? v : new Date(v)
+            if (mode === 'raw') {
+              return d.toLocaleString('zh-TW', {
+                month: '2-digit',
+                day: '2-digit',
+                hour: '2-digit',
+                minute: '2-digit',
+              })
+            }
+            return d.toLocaleDateString('zh-TW', {
+              year: '2-digit',
+              month: '2-digit',
+              day: '2-digit',
+            })
+          },
+        },
+      ]}
+      yAxis={[
+        {
+          min: 0,
+          max: 5,
+          tickInterval: [0, 1, 2, 3, 4, 5],
+          valueFormatter: levelTickFormat,
+        },
+      ]}
+      series={[
+        {
+          data: ys,
+          label: assistantName || (assistantId ? '單一情境' : '整體'),
+          color: '#54a9c0',
+          showMark: true,
+          curve: 'monotoneX',
+          valueFormatter: (v, ctx) => {
+            const idx = ctx?.dataIndex ?? 0
+            const p = points[idx]
+            if (!p) return String(v)
+            const lk = p.levelKey || levelTickFormat(v)
+            const conf =
+              p.confidence != null
+                ? ` (信心 ${Number(p.confidence).toFixed(2)})`
+                : ''
+            return `${lk}${conf}`
+          },
+        },
+      ]}
+      height={height}
+      margin={{
+        left: showAxisLabels ? 50 : 30,
+        right: 16,
+        top: 12,
+        bottom: showAxisLabels ? 30 : 20,
+      }}
+      slotProps={{ legend: { hidden: true } }}
+    />
+  )
+}
+
 // CEFR 圓餅圖卡片
 function CefrPieCard({ cefrGroups = [], loading }) {
   const theme = useTheme()
@@ -276,7 +451,7 @@ function CefrPieCard({ cefrGroups = [], loading }) {
   )
 }
 
-function CefrColumn({ title, assistants = [] }) {
+function CefrColumn({ title, assistants = [], source, mongoUserId }) {
   return (
     <Box>
       <Typography
@@ -344,6 +519,26 @@ function CefrColumn({ title, assistants = [] }) {
                       />
                     )}
                   </Stack>
+
+                  {mongoUserId && a.assistantId ? (
+                    <Box sx={{ mb: 1 }}>
+                      <Typography
+                        variant='subtitle2'
+                        sx={{ fontWeight: 900, mb: 0.25 }}
+                      >
+                        CEFR 趨勢
+                      </Typography>
+                      <CefrTrendChart
+                        source={source}
+                        mongoUserId={mongoUserId}
+                        assistantId={a.assistantId}
+                        assistantName={a.assistantName}
+                        mode='daily'
+                        height={160}
+                        showAxisLabels
+                      />
+                    </Box>
+                  ) : null}
 
                   {focus.length ? (
                     <>
@@ -594,15 +789,169 @@ function BadgeAccordionPanel({ stats = {}, earnedIds = [], loading }) {
   )
 }
 
+// 整體 CEFR 趨勢圖卡片（含 Raw/Daily 切換、Assistant 篩選、日期範圍）
+function OverallCefrTrendCard({
+  source,
+  mongoUserId,
+  assistantOptions = [],
+  loading,
+}) {
+  const [mode, setMode] = useState('daily')
+  const [assistantId, setAssistantId] = useState('')
+  const [start, setStart] = useState('')
+  const [end, setEnd] = useState('')
+
+  const startIso = useMemo(() => {
+    if (!start) return null
+    const d = new Date(`${start}T00:00:00`)
+    return Number.isNaN(d.getTime()) ? null : d.toISOString()
+  }, [start])
+
+  const endIso = useMemo(() => {
+    if (!end) return null
+    const d = new Date(`${end}T23:59:59.999`)
+    return Number.isNaN(d.getTime()) ? null : d.toISOString()
+  }, [end])
+
+  const selectedAssistantName = useMemo(() => {
+    if (!assistantId) return ''
+    const found = assistantOptions.find((o) => o.assistantId === assistantId)
+    return found?.assistantName || ''
+  }, [assistantId, assistantOptions])
+
+  return (
+    <Card variant='outlined' sx={{ borderRadius: 3 }}>
+      <CardContent>
+        <Stack
+          direction={{ xs: 'column', md: 'row' }}
+          alignItems={{ xs: 'flex-start', md: 'center' }}
+          justifyContent='space-between'
+          spacing={1.5}
+          sx={{ mb: 1.5 }}
+          useFlexGap
+          flexWrap='wrap'
+        >
+          <Box>
+            <Typography variant='h6' sx={{ fontWeight: 900 }}>
+              整體 CEFR 趨勢
+            </Typography>
+            <Typography variant='body2' sx={{ opacity: 0.7 }}>
+              依時間追蹤學生的 CEFR 等級變化（讀取 cefrEvents）
+            </Typography>
+          </Box>
+
+          <Stack
+            direction='row'
+            spacing={1}
+            alignItems='center'
+            useFlexGap
+            flexWrap='wrap'
+          >
+            <ToggleButtonGroup
+              size='small'
+              value={mode}
+              exclusive
+              onChange={(_, v) => v && setMode(v)}
+              sx={{
+                '& .MuiToggleButton-root': {
+                  color: 'primary.main',
+                  border: '1px solid',
+                  borderColor: 'primary.main',
+                  fontSize: '0.75rem',
+                  fontWeight: 700,
+                  py: 0.5,
+                  px: 1.5,
+                },
+                '& .MuiToggleButton-root.Mui-selected': {
+                  bgcolor: 'primary.main',
+                  color: '#fff',
+                  '&:hover': { bgcolor: 'primary.dark' },
+                },
+              }}
+            >
+              <ToggleButton value='daily'>Daily</ToggleButton>
+              <ToggleButton value='raw'>Raw</ToggleButton>
+            </ToggleButtonGroup>
+
+            <TextField
+              select
+              size='small'
+              id='assistant'
+              name='assistant'
+              label='Assistant'
+              value={assistantId}
+              onChange={(e) => setAssistantId(e.target.value)}
+              sx={{ minWidth: 180 }}
+              InputLabelProps={{ shrink: true }}
+              SelectProps={{
+                displayEmpty: true,
+                inputProps: { id: 'assistant', name: 'assistant' },
+                renderValue: (v) => {
+                  if (!v) return '整體'
+                  return selectedAssistantName || '單一情境'
+                },
+              }}
+            >
+              <MenuItem value=''>整體</MenuItem>
+              {assistantOptions.map((opt) => (
+                <MenuItem key={opt.assistantId} value={opt.assistantId}>
+                  {opt.assistantName || opt.assistantId}
+                </MenuItem>
+              ))}
+            </TextField>
+
+            <TextField
+              size='small'
+              id='startDate'
+              name='startDate'
+              label='起'
+              type='date'
+              value={start}
+              onChange={(e) => setStart(e.target.value)}
+              InputLabelProps={{ shrink: true }}
+              sx={{ minWidth: 140 }}
+            />
+            <TextField
+              size='small'
+              id='endDate'
+              name='endDate'
+              label='迄'
+              type='date'
+              value={end}
+              onChange={(e) => setEnd(e.target.value)}
+              InputLabelProps={{ shrink: true }}
+              sx={{ minWidth: 140 }}
+            />
+          </Stack>
+        </Stack>
+
+        <Divider sx={{ mb: 1.5 }} />
+
+        {loading || !mongoUserId ? (
+          <Box sx={{ py: 6, display: 'grid', placeItems: 'center' }}>
+            <CircularProgress />
+          </Box>
+        ) : (
+          <CefrTrendChart
+            source={source}
+            mongoUserId={mongoUserId}
+            assistantId={assistantId || null}
+            assistantName={selectedAssistantName}
+            mode={mode}
+            start={startIso}
+            end={endIso}
+            height={300}
+            showAxisLabels
+          />
+        )}
+      </CardContent>
+    </Card>
+  )
+}
+
 /** ---------- page ---------- */
 export default function Overview() {
-  const params = useParams()
-  const hfUserId =
-    params.hfUserId ||
-    (() => {
-      const m = window.location.pathname.match(/student\/([^/]+)/)
-      return m?.[1]
-    })()
+  const { source, hfUserId } = useParams()
 
   const [data, setData] = useState(null)
   const [err, setErr] = useState('')
@@ -610,17 +959,29 @@ export default function Overview() {
 
   useEffect(() => {
     if (!hfUserId) return
-    setErr('')
-    setData(null)
-    apiGet(`/api/student/${hfUserId}/overview`)
-      .then(setData)
-      .catch((e) => setErr(String(e)))
-  }, [hfUserId])
+    let cancelled = false
+    Promise.resolve().then(() => {
+      if (!cancelled) {
+        setErr('')
+        setData(null)
+      }
+    })
+    apiGet(`/api/${source}/student/${hfUserId}/overview`)
+      .then((d) => {
+        if (!cancelled) setData(d)
+      })
+      .catch((e) => {
+        if (!cancelled) setErr(String(e))
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [source, hfUserId])
 
   const loading = !data && !err
 
   const stats = data?.stats ?? {}
-  console.log(data, 'data')
+  const mongoUserId = data?.mongoUserId || ''
   const earnedBadgeIds = data?.badge?.earnedIds ?? []
   const ts = data?.timeseries ?? { labels: [] }
   const labels = ts.labels ?? []
@@ -641,6 +1002,22 @@ export default function Overview() {
       (a, b) => orderIndex(a.levelKey) - orderIndex(b.levelKey),
     )
   }, [data])
+
+  // 整體趨勢圖的 assistant 下拉：去重後的 (assistantId, assistantName)
+  const assistantOptions = useMemo(() => {
+    const map = new Map()
+    cefrGroups.forEach((g) => {
+      ;(g.assistants || []).forEach((a) => {
+        if (a.assistantId && !map.has(a.assistantId)) {
+          map.set(a.assistantId, {
+            assistantId: a.assistantId,
+            assistantName: a.assistantName || a.assistantId,
+          })
+        }
+      })
+    })
+    return Array.from(map.values())
+  }, [cefrGroups])
 
   if (err) {
     return (
@@ -788,7 +1165,19 @@ export default function Overview() {
         </Grid>
       </Grid>
 
-      {/* 3. 第三列：CEFR 詳細建議 */}
+      {/* 3. 第三列：整體 CEFR 趨勢圖 */}
+      <Grid container spacing={2} sx={{ mb: 2 }}>
+        <Grid item size={{ xs: 12 }}>
+          <OverallCefrTrendCard
+            source={source}
+            mongoUserId={mongoUserId}
+            assistantOptions={assistantOptions}
+            loading={loading}
+          />
+        </Grid>
+      </Grid>
+
+      {/* 4. 第四列：CEFR 詳細建議 */}
       <Grid container spacing={2}>
         <Grid item size={{ xs: 12 }}>
           <Card variant='outlined' sx={{ borderRadius: 3 }}>
@@ -798,7 +1187,7 @@ export default function Overview() {
                   CEFR 詳細建議
                 </Typography>
                 <Typography variant='body2' sx={{ opacity: 0.7 }}>
-                  根據各情境表現分析
+                  根據各情境表現分析（含每個 assistant 的趨勢圖）
                 </Typography>
               </Stack>
               <Divider sx={{ my: 1.5 }} />
@@ -814,6 +1203,8 @@ export default function Overview() {
                       <CefrColumn
                         title={g.title || CEFR_TITLES[g.levelKey] || g.levelKey}
                         assistants={g.assistants || []}
+                        source={source}
+                        mongoUserId={mongoUserId}
                       />
                     </Grid>
                   ))}

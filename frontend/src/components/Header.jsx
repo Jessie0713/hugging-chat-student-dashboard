@@ -57,15 +57,25 @@ const NavItem = ({ to, label }) => {
 }
 
 export default function StudentHeader() {
-  const { hfUserId } = useParams()
+  const { source, hfUserId } = useParams()
   const [profile, setProfile] = useState(null)
 
   useEffect(() => {
-    setProfile(null)
-    apiGet(`/api/student/${hfUserId}/profile`)
-      .then(setProfile)
-      .catch(() => setProfile(null))
-  }, [hfUserId])
+    let cancelled = false
+    Promise.resolve().then(() => {
+      if (!cancelled) setProfile(null)
+    })
+    apiGet(`/api/${source}/student/${hfUserId}/profile`)
+      .then((p) => {
+        if (!cancelled) setProfile(p)
+      })
+      .catch(() => {
+        if (!cancelled) setProfile(null)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [source, hfUserId])
 
   const displayName =
     profile?.lastname || profile?.firstname
@@ -105,9 +115,9 @@ export default function StudentHeader() {
 
           {/* 中間導覽（總覽 / 對話分析 / 獎章） */}
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-            <NavItem to={`/student/${hfUserId}/overview`} label='總覽' />
+            <NavItem to={`/${source}/student/${hfUserId}/overview`} label='總覽' />
             <NavItem
-              to={`/student/${hfUserId}/conversations`}
+              to={`/${source}/student/${hfUserId}/conversations`}
               label='對話分析'
             />
             {/* <NavItem to={`/student/${hfUserId}/badges`} label='獎章' /> */}

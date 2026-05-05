@@ -25,31 +25,6 @@ import AssessmentIcon from '@mui/icons-material/Assessment'
 import { apiGet, apiPost } from '../lib/api'
 import KeyboardVoiceOutlinedIcon from '@mui/icons-material/KeyboardVoiceOutlined'
 
-// 輔助函式：格式化日期
-const formatDate = (dateString) => {
-  if (!dateString) return ''
-  const d = new Date(dateString)
-  return d.toLocaleDateString('zh-TW', {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  })
-}
-
-// 輔助函式：根據 assistantId 產生隨機顏色 Avatar
-const stringToColor = (string) => {
-  let hash = 0
-  if (!string) return '#bdbdbd'
-  for (let i = 0; i < string.length; i += 1) {
-    hash = string.charCodeAt(i) + ((hash << 5) - hash)
-  }
-  let color = '#'
-  for (let i = 0; i < 3; i += 1) {
-    const value = (hash >> (i * 8)) & 0xff
-    color += `00${value.toString(16)}`.slice(-2)
-  }
-  return color
-}
 // 定義共用的樣式變數，方便統一高度
 const commonCardStyle = {
   height: '65vh', // 設定固定高度 (或是用 px, e.g., '600px')
@@ -65,7 +40,7 @@ const scrollableContentStyle = {
 }
 
 export default function Conversations() {
-  const { hfUserId } = useParams()
+  const { source, hfUserId } = useParams()
 
   // States
   const [list, setList] = useState(null) // 聊天記錄列表
@@ -82,7 +57,9 @@ export default function Conversations() {
   useEffect(() => {
     const skip = (page - 1) * limit
     setLoading(true)
-    apiGet(`/api/student/${hfUserId}/conversations?skip=${skip}&limit=${limit}`)
+    apiGet(
+      `/api/${source}/student/${hfUserId}/conversations?skip=${skip}&limit=${limit}`,
+    )
       .then((data) => {
         setList(data)
         setLoading(false)
@@ -91,14 +68,14 @@ export default function Conversations() {
         console.error(err)
         setLoading(false)
       })
-  }, [hfUserId, page])
+  }, [source, hfUserId, page])
 
   // 2. 抓取 Overview 資料 (為了右側排行榜)
   useEffect(() => {
-    apiGet(`/api/student/${hfUserId}/overview`)
+    apiGet(`/api/${source}/student/${hfUserId}/overview`)
       .then(setOverview)
       .catch(console.error)
-  }, [hfUserId])
+  }, [source, hfUserId])
 
   // 處理分頁
   const totalPages = list
@@ -315,7 +292,7 @@ export default function Conversations() {
                         setAiLoading(true)
                         try {
                           const res = await apiPost(
-                            `/api/student/${hfUserId}/ai-advice`,
+                            `/api/${source}/student/${hfUserId}/ai-advice`,
                           )
 
                           setAiAdvice({
@@ -358,7 +335,7 @@ export default function Conversations() {
                     setAiLoading(true)
                     try {
                       const res = await apiPost(
-                        `/api/student/${hfUserId}/ai-advice`,
+                        `/api/${source}/student/${hfUserId}/ai-advice`,
                       )
 
                       setAiAdvice({
