@@ -146,6 +146,8 @@ export default function OverviewHuggingchat() {
   )
 
   if (err) {
+    const userMissing =
+      /user not found/i.test(err) || /找不到/i.test(err)
     return (
       <Card variant='outlined'>
         <CardContent>
@@ -153,6 +155,15 @@ export default function OverviewHuggingchat() {
             讀取失敗
           </Typography>
           <Typography sx={{ whiteSpace: 'pre-wrap', mt: 1 }}>{err}</Typography>
+          {userMissing ? (
+            <Typography variant='body2' sx={{ mt: 2, opacity: 0.85 }}>
+              huggingchat 讀取的是資料庫{' '}
+              <code>chat-ui-control</code>
+              （見環境變數 HUGGINGCHAT_MONGO_DB_NAME）。若該 hfUserId 只在{' '}
+              <code>chat-ui</code>（m7 來源）存在，請改選 m7，或在 control
+              庫的 <code>users</code> 集合確認是否有對應的 hfUserId。
+            </Typography>
+          ) : null}
         </CardContent>
       </Card>
     )

@@ -18,14 +18,9 @@ FRONTEND_ORIGIN=http://localhost:5174
 MONGO_URI=mongodb://localhost:27018
 MONGO_DB=chat-ui
 
-# Mongo (source=huggingchat) - 透過 SSH tunnel
-HUGGINGCHAT_SSH_HOST=
-HUGGINGCHAT_SSH_PORT=22
-HUGGINGCHAT_SSH_USER=
-HUGGINGCHAT_SSH_PASS=
-HUGGINGCHAT_REMOTE_DB_HOST=127.0.0.1
-HUGGINGCHAT_REMOTE_DB_PORT=27017
-HUGGINGCHAT_MONGO_DB_NAME=chat-ui
+# Mongo (source=huggingchat) — 本機直連（預設與 m7 同一 mongod，database 不同）
+HUGGINGCHAT_MONGO_URI=mongodb://localhost:27018
+HUGGINGCHAT_MONGO_DB_NAME=chat-ui-control
 
 # Moodle MySQL - Double SSH tunnel（見 backend/db.py）
 SSH1_HOST=
@@ -90,8 +85,8 @@ npm run dev
 
 `source` 目前支援（見 `backend/mongo_db.py`）：
 
-- `m7`：直接連 `MONGO_URI`
-- `huggingchat`：透過 SSH tunnel 連遠端 Mongo
+- `m7`：直接連 `MONGO_URI` / `MONGO_DB`
+- `huggingchat`：`HUGGINGCHAT_MONGO_URI`（預設 `mongodb://localhost:27018`），資料庫名 `HUGGINGCHAT_MONGO_DB_NAME`（預設 `chat-ui-control`；亦相容 `EXP_MONGO_DB_NAME`）
 
 範例（測試帳號）：
 
@@ -125,7 +120,7 @@ npm run dev
 
 - **Mongo（Motor）**: `backend/mongo_db.py`
   - `m7`：`MONGO_URI` / `MONGO_DB`
-  - `huggingchat`：以 `HUGGINGCHAT_*` 透過 SSH tunnel 連線
+  - `huggingchat`：`HUGGINGCHAT_MONGO_URI` / `HUGGINGCHAT_MONGO_DB_NAME`（亦相容 `EXP_MONGO_DB_NAME`）
 - **Moodle MySQL（PyMySQL）**: `backend/db.py`
   - 使用 **Double SSH tunnel** 方式連到 DB（環境變數 `SSH1_*`, `SSH2_*`, `DB_*_API`）
 - **Azure OpenAI**: `backend/azure_openai.py`
