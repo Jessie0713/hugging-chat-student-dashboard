@@ -22,8 +22,20 @@ import {
   TextField,
   MenuItem,
 } from '@mui/material'
+import clsx from 'clsx'
 import HelpOutlineRoundedIcon from '@mui/icons-material/HelpOutlineRounded'
 import ExpandMoreRoundedIcon from '@mui/icons-material/ExpandMoreRounded'
+import {
+  ChartsLabelMark,
+  ChartsTooltipCell,
+  ChartsTooltipContainer,
+  ChartsTooltipPaper,
+  ChartsTooltipRow,
+  ChartsTooltipTable,
+  DEFAULT_X_AXIS_KEY,
+  chartsTooltipClasses,
+  useAxesTooltip,
+} from '@mui/x-charts'
 import { LineChart } from '@mui/x-charts/LineChart'
 import { PieChart } from '@mui/x-charts/PieChart'
 import { useTheme } from '@mui/material/styles'
@@ -40,6 +52,164 @@ const CEFR_TITLES = {
   C1: 'C1 (高階)',
   C2: 'C2 (精通級)',
   C1C2: 'C1-C2 (高階)',
+}
+
+// 與後端 /api/cefr/trends/daily 的 tz（預設 Asia/Taipei）對齊
+const CEFR_TREND_TZ = 'Asia/Taipei'
+
+/** `YYYY-MM-DD`（date input）→ 該日台北 0:00 的瞬間 */
+function taipeiDayStartDate(ymd) {
+  if (!ymd || !/^\d{4}-\d{2}-\d{2}$/.test(ymd)) return null
+  const d = new Date(`${ymd}T00:00:00+08:00`)
+  return Number.isNaN(d.getTime()) ? null : d
+}
+
+/** `YYYY-MM-DD` → 該日台北 23:59:59.999 */
+function taipeiDayEndDate(ymd) {
+  if (!ymd || !/^\d{4}-\d{2}-\d{2}$/.test(ymd)) return null
+  const d = new Date(`${ymd}T23:59:59.999+08:00`)
+  return Number.isNaN(d.getTime()) ? null : d
+}
+
+/**
+ * API / Mongo 常把「UTC 瞬間」序列化成無時區的 ISO（例如 `2026-05-11T04:19:56.931`）。
+ * 若直接 new Date(s)，依 ES 規範會當「本地時區」解讀 → 在台灣會變成把 UTC 04:19 當台北 04:19，畫面永遠少 8 小時。
+ * 僅在「含 T 的日期時間且字尾沒有 Z / ±offset」時強制當 UTC（加 Z）解析。
+ */
+function parseUtcLikeInstant(value) {
+  if (value == null || value === '') return null
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime()) ? null : value
+  }
+  const s = String(value).trim()
+  if (!s) return null
+  const hasZone =
+    /[zZ]$/.test(s) || /[+-]\d{2}:\d{2}$/.test(s) || /[+-]\d{4}$/.test(s)
+  if (/^\d{4}-\d{2}-\d{2}T/.test(s) && !hasZone) {
+    const d = new Date(`${s}Z`)
+    return Number.isNaN(d.getTime()) ? null : d
+  }
+  const d = new Date(s)
+  return Number.isNaN(d.getTime()) ? null : d
+}
+
+// X 軸用 epoch ms + linear scale + Intl（Asia/Taipei）顯示；勿用 scaleType: time，否則在 OS=UTC 時 d3 tick 會顯示 04:xx。
+const CEFR_TREND_RAW_AXIS_FMT = new Intl.DateTimeFormat('zh-TW', {
+  timeZone: CEFR_TREND_TZ,
+  month: '2-digit',
+  day: '2-digit',
+  hour: '2-digit',
+  minute: '2-digit',
+  hour12: true,
+})
+const CEFR_TREND_DAILY_AXIS_FMT = new Intl.DateTimeFormat('zh-TW', {
+  timeZone: CEFR_TREND_TZ,
+  year: '2-digit',
+  month: '2-digit',
+  day: '2-digit',
+})
+
+function formatCefrTrendXAxis(mode, value) {
+  const d = value instanceof Date ? value : new Date(value)
+  if (Number.isNaN(d.getTime())) return ''
+  return mode === 'raw'
+    ? CEFR_TREND_RAW_AXIS_FMT.format(d)
+    : CEFR_TREND_DAILY_AXIS_FMT.format(d)
+}
+
+/** DB 存 UTC 瞬間（或 ISO）；axis tooltip 的 axisValue 可能是 Date 或 epoch ms */
+function formatCefrTrendAxisCaption(mode, axisValue, axisFormattedValue) {
+  if (axisValue == null) return axisFormattedValue ?? ''
+  if (axisValue instanceof Date) {
+    return formatCefrTrendXAxis(mode, axisValue)
+  }
+  const n = Number(axisValue)
+  if (Number.isFinite(n) && n > 1e11 && n < 1e14) {
+    const d = new Date(n)
+    if (!Number.isNaN(d.getTime())) return formatCefrTrendXAxis(mode, d)
+  }
+  return axisFormattedValue ?? ''
+}
+
+/** 與 MUI ChartsAxisTooltipContent 相同版面，但 caption 強制用台北時區（避免 axis tooltip 未帶到 valueFormatter） */
+function CefrTaipeiAxisTooltipContent({ mode, sx }) {
+  const tooltipData = useAxesTooltip()
+  if (tooltipData === null) {
+    return null
+  }
+  return (
+    <ChartsTooltipPaper sx={sx} className={chartsTooltipClasses.paper}>
+      {tooltipData.map(
+        ({
+          axisId,
+          mainAxis,
+          axisValue,
+          axisFormattedValue,
+          seriesItems,
+        }) => {
+          const caption = formatCefrTrendAxisCaption(
+            mode,
+            axisValue,
+            axisFormattedValue,
+          )
+          return (
+            <ChartsTooltipTable key={axisId} className={chartsTooltipClasses.table}>
+              {axisValue != null && !mainAxis.hideTooltip && (
+                <Typography component='caption'>{caption}</Typography>
+              )}
+              <tbody>
+                {seriesItems.map(
+                  ({
+                    seriesId,
+                    color,
+                    formattedValue,
+                    formattedLabel,
+                    markType,
+                  }) => {
+                    if (formattedValue == null) {
+                      return null
+                    }
+                    return (
+                      <ChartsTooltipRow
+                        key={seriesId}
+                        className={chartsTooltipClasses.row}
+                      >
+                        <ChartsTooltipCell
+                          className={clsx(
+                            chartsTooltipClasses.labelCell,
+                            chartsTooltipClasses.cell,
+                          )}
+                          component='th'
+                        >
+                          <div className={chartsTooltipClasses.markContainer}>
+                            <ChartsLabelMark
+                              type={markType}
+                              color={color}
+                              className={chartsTooltipClasses.mark}
+                            />
+                          </div>
+                          {formattedLabel || null}
+                        </ChartsTooltipCell>
+                        <ChartsTooltipCell
+                          className={clsx(
+                            chartsTooltipClasses.valueCell,
+                            chartsTooltipClasses.cell,
+                          )}
+                          component='td'
+                        >
+                          {formattedValue}
+                        </ChartsTooltipCell>
+                      </ChartsTooltipRow>
+                    )
+                  },
+                )}
+              </tbody>
+            </ChartsTooltipTable>
+          )
+        },
+      )}
+    </ChartsTooltipPaper>
+  )
 }
 
 // CEFR numeric (0~5) -> levelKey；用來畫 Y 軸 tick
@@ -228,6 +398,7 @@ function CefrTrendChart({
     if (assistantId) params.set('assistant_id', assistantId)
     if (start) params.set('start', new Date(start).toISOString())
     if (end) params.set('end', new Date(end).toISOString())
+    if (mode === 'daily') params.set('tz', CEFR_TREND_TZ)
 
     const path = mode === 'raw' ? '/api/cefr/trends' : '/api/cefr/trends/daily'
 
@@ -241,23 +412,32 @@ function CefrTrendChart({
           const arr = Array.isArray(d?.points) ? d.points : []
           setPoints(
             arr
-              .filter((p) => p.ts && p.level != null)
-              .map((p) => ({
-                x: new Date(p.ts),
-                y: Number(p.level),
-                levelKey: p.levelKey,
-                confidence: p.confidence,
-                assistantId: p.assistantId,
-                conversationId: p.conversationId,
-              })),
+              .filter((p) => p.ts != null && p.level != null)
+              .map((p) => {
+                const x = parseUtcLikeInstant(p.ts)
+                return {
+                  x: x ?? new Date(NaN),
+                  y: Number(p.level),
+                  levelKey: p.levelKey,
+                  confidence: p.confidence,
+                  assistantId: p.assistantId,
+                  conversationId: p.conversationId,
+                }
+              })
+              .filter((p) => p.x && !Number.isNaN(p.x.getTime())),
           )
         } else {
           const arr = Array.isArray(d?.series) ? d.series : []
           setPoints(
             arr
-              .filter((s) => s.date && s.value != null)
+              .filter(
+                (s) =>
+                  s.date &&
+                  s.value != null &&
+                  taipeiDayStartDate(s.date) != null,
+              )
               .map((s) => ({
-                x: new Date(`${s.date}T00:00:00`),
+                x: taipeiDayStartDate(s.date),
                 y: Number(s.value),
                 levelKey: s.levelKeyRounded,
                 confidence: s.confidenceAvg,
@@ -275,6 +455,66 @@ function CefrTrendChart({
       cancelled = true
     }
   }, [source, mongoUserId, assistantId, mode, start, end])
+
+  const xsMs = useMemo(
+    () =>
+      points == null
+        ? []
+        : points.map((p) =>
+            p.x instanceof Date ? p.x.getTime() : Number(p.x),
+          ),
+    [points],
+  )
+  const ys = useMemo(
+    () => (points == null ? [] : points.map((p) => p.y)),
+    [points],
+  )
+  /** 點數不多時強制以資料時間為 tick；X 為 epoch ms + linear 軸，刻度一律走 valueFormatter + Intl 台北 */
+  const xAxis = useMemo(() => {
+    const maxDenseTicks = 48
+    const maxSampledTicks = 24
+    let tickInterval
+    if (xsMs.length === 0) {
+      tickInterval = undefined
+    } else if (xsMs.length <= maxDenseTicks) {
+      tickInterval = xsMs
+    } else if (mode === 'raw') {
+      const step = Math.max(1, Math.ceil(xsMs.length / maxSampledTicks))
+      const picked = []
+      for (let i = 0; i < xsMs.length; i += step) picked.push(xsMs[i])
+      const last = xsMs[xsMs.length - 1]
+      if (picked.length && picked[picked.length - 1] !== last) picked.push(last)
+      tickInterval = picked
+    } else {
+      const step = Math.max(1, Math.ceil(xsMs.length / maxSampledTicks))
+      const picked = []
+      for (let i = 0; i < xsMs.length; i += step) picked.push(xsMs[i])
+      const last = xsMs[xsMs.length - 1]
+      if (picked.length && picked[picked.length - 1] !== last) picked.push(last)
+      tickInterval = picked
+    }
+    return [
+      {
+        id: DEFAULT_X_AXIS_KEY,
+        data: xsMs,
+        scaleType: 'linear',
+        tickInterval,
+        valueFormatter: (v) => formatCefrTrendXAxis(mode, v),
+      },
+    ]
+  }, [xsMs, mode])
+
+  const cefrTrendTooltipSlot = useMemo(
+    () =>
+      function CefrTrendTooltipSlot(props) {
+        return (
+          <ChartsTooltipContainer {...props}>
+            <CefrTaipeiAxisTooltipContent mode={mode} sx={props.sx} />
+          </ChartsTooltipContainer>
+        )
+      },
+    [mode],
+  )
 
   if (err) {
     return (
@@ -304,34 +544,9 @@ function CefrTrendChart({
     )
   }
 
-  // 單點時 LineChart 不會畫線；在前後加同 y 值 padding 點，視覺上仍像一條線
-  const xs = points.map((p) => p.x)
-  const ys = points.map((p) => p.y)
-
   return (
     <LineChart
-      xAxis={[
-        {
-          data: xs,
-          scaleType: 'time',
-          valueFormatter: (v) => {
-            const d = v instanceof Date ? v : new Date(v)
-            if (mode === 'raw') {
-              return d.toLocaleString('zh-TW', {
-                month: '2-digit',
-                day: '2-digit',
-                hour: '2-digit',
-                minute: '2-digit',
-              })
-            }
-            return d.toLocaleDateString('zh-TW', {
-              year: '2-digit',
-              month: '2-digit',
-              day: '2-digit',
-            })
-          },
-        },
-      ]}
+      xAxis={xAxis}
       yAxis={[
         {
           min: 0,
@@ -343,6 +558,7 @@ function CefrTrendChart({
       series={[
         {
           data: ys,
+          xAxisId: DEFAULT_X_AXIS_KEY,
           label: assistantName || (assistantId ? '單一情境' : '整體'),
           color: '#54a9c0',
           showMark: true,
@@ -367,6 +583,7 @@ function CefrTrendChart({
         top: 12,
         bottom: showAxisLabels ? 30 : 20,
       }}
+      slots={{ tooltip: cefrTrendTooltipSlot }}
       slotProps={{ legend: { hidden: true } }}
     />
   )
@@ -533,7 +750,7 @@ function CefrColumn({ title, assistants = [], source, mongoUserId }) {
                         mongoUserId={mongoUserId}
                         assistantId={a.assistantId}
                         assistantName={a.assistantName}
-                        mode='daily'
+                        mode='raw'
                         height={160}
                         showAxisLabels
                       />
@@ -802,15 +1019,13 @@ function OverallCefrTrendCard({
   const [end, setEnd] = useState('')
 
   const startIso = useMemo(() => {
-    if (!start) return null
-    const d = new Date(`${start}T00:00:00`)
-    return Number.isNaN(d.getTime()) ? null : d.toISOString()
+    const d = taipeiDayStartDate(start)
+    return d ? d.toISOString() : null
   }, [start])
 
   const endIso = useMemo(() => {
-    if (!end) return null
-    const d = new Date(`${end}T23:59:59.999`)
-    return Number.isNaN(d.getTime()) ? null : d.toISOString()
+    const d = taipeiDayEndDate(end)
+    return d ? d.toISOString() : null
   }, [end])
 
   const selectedAssistantName = useMemo(() => {
