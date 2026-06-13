@@ -5,31 +5,51 @@ import {
   Box,
   Card,
   CardContent,
+  Chip,
   CircularProgress,
-  Grid,
+  Stack,
   Typography,
 } from '@mui/material'
 import { apiGet } from '../lib/api'
+import { filterActiveEarnedIds, getBadgesForSource } from '../lib/badgeDefinitions'
 
-function BadgeSlot({ unlocked, title }) {
+function BadgeSlot({ unlocked, icon, title, subtitle }) {
   return (
-    <Box
-      sx={{
-        width: 72,
-        height: 72,
-        borderRadius: '50%',
-        border: '1px solid',
-        borderColor: unlocked ? 'primary.main' : 'divider',
-        display: 'grid',
-        placeItems: 'center',
-        bgcolor: unlocked ? 'action.hover' : 'background.paper',
-        fontWeight: 800,
-        fontSize: 22,
-      }}
-      title={title}
-    >
-      {unlocked ? '🏅' : '?'}
-    </Box>
+    <Stack alignItems='center' spacing={0.5} sx={{ width: 88 }}>
+      <Box
+        sx={{
+          width: 72,
+          height: 72,
+          borderRadius: '50%',
+          border: '1px solid',
+          borderColor: unlocked ? 'primary.main' : 'divider',
+          display: 'grid',
+          placeItems: 'center',
+          bgcolor: unlocked ? 'action.hover' : 'background.paper',
+          fontWeight: 800,
+          fontSize: 28,
+        }}
+        title={title}
+      >
+        {unlocked ? icon : '?'}
+      </Box>
+      <Typography
+        variant='caption'
+        sx={{
+          fontWeight: 700,
+          textAlign: 'center',
+          lineHeight: 1.2,
+          opacity: unlocked ? 1 : 0.6,
+        }}
+      >
+        {title}
+      </Typography>
+      {subtitle ? (
+        <Typography variant='caption' sx={{ opacity: 0.55, fontSize: '0.65rem' }}>
+          {subtitle}
+        </Typography>
+      ) : null}
+    </Stack>
   )
 }
 
@@ -59,18 +79,25 @@ export default function Badges() {
     }
   }, [source, hfUserId])
 
-  const slots = useMemo(() => {
-    const badges = data?.badges || []
-    // 預設先展示 10 格（像你截圖）
-    const totalSlots = 10
-    const filled = badges.map((b) => ({
-      unlocked: true,
-      title: b.name || 'badge',
-    }))
-    while (filled.length < totalSlots)
-      filled.push({ unlocked: false, title: 'locked' })
-    return filled.slice(0, totalSlots)
-  }, [data])
+  const badgeDefs = useMemo(() => getBadgesForSource(source), [source])
+  const earnedSet = useMemo(() => {
+    const ids = filterActiveEarnedIds(data?.badge?.earnedIds)
+    return new Set(ids)
+  }, [data, source])
+
+  const slots = useMemo(
+    () =>
+      badgeDefs.map((b) => ({
+        id: b.id,
+        unlocked: earnedSet.has(b.id),
+        icon: b.icon,
+        title: b.name,
+        subtitle: b.gradeNote,
+      })),
+    [badgeDefs, earnedSet],
+  )
+
+  const earnedCount = slots.filter((s) => s.unlocked).length
 
   return (
     <Box>
@@ -80,9 +107,24 @@ export default function Badges() {
 
       <Card variant='outlined'>
         <CardContent>
-          <Typography variant='h6' sx={{ fontWeight: 700, mb: 2 }}>
-            已獲得獎章
-          </Typography>
+          <Stack
+            direction='row'
+            alignItems='center'
+            spacing={1}
+            sx={{ mb: 2 }}
+            flexWrap='wrap'
+            useFlexGap
+          >
+            <Typography variant='h6' sx={{ fontWeight: 700 }}>
+              已獲得獎章
+            </Typography>
+            <Chip
+              size='small'
+              label={`${earnedCount} / ${slots.length}`}
+              color='primary'
+              variant='outlined'
+            />
+          </Stack>
 
           {err ? (
             <Typography color='error' sx={{ whiteSpace: 'pre-wrap' }}>
@@ -91,19 +133,18 @@ export default function Badges() {
           ) : loading ? (
             <CircularProgress size={22} />
           ) : (
-            <Grid container spacing={2}>
-              {slots.map((s, idx) => (
-                <Grid item key={idx}>
-                  <BadgeSlot unlocked={s.unlocked} title={s.title} />
-                </Grid>
+            <Stack direction='row' flexWrap='wrap' useFlexGap spacing={2}>
+              {slots.map((s) => (
+                <BadgeSlot
+                  key={s.id}
+                  unlocked={s.unlocked}
+                  icon={s.icon}
+                  title={s.title}
+                  subtitle={s.subtitle}
+                />
               ))}
-            </Grid>
+            </Stack>
           )}
-
-          <Typography variant='body2' sx={{ mt: 2, opacity: 0.7 }}>
-            你之後只要在後端把 /badges 回傳 badges array（含
-            name、icon、earnedAt），前端就會自動顯示已解鎖。
-          </Typography>
         </CardContent>
       </Card>
     </Box>

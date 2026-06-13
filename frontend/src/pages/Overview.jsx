@@ -43,6 +43,12 @@ import { apiGet } from '../lib/api'
 import PracticeFitSummaryCard from '../components/PracticeFitSummaryCard'
 import MyPracticePanel from '../components/MyPracticePanel'
 import {
+  filterActiveEarnedIds,
+  getBadgesForSource,
+  hasLegacyEarnedIds,
+  isFixedLevelSource,
+} from '../lib/badgeDefinitions'
+import {
   cefrToTier,
   formatNextLevelLabel,
   groupCefrByTier,
@@ -237,75 +243,7 @@ function safeNum(n, fallback = 0) {
   const x = Number(n)
   return Number.isFinite(x) ? x : fallback
 }
-const BADGES = [
-  {
-    id: 'streak_7',
-    icon: '🏆',
-    name: '開始聊天',
-    meaning: '你已經把練習變成日常了！',
-    unlock: '開始聊天',
-  },
-  {
-    id: 'streak_3',
-    icon: '🏅',
-    name: '連聊三天',
-    meaning: '你建立了穩定的練習習慣。',
-    unlock: '連續聊天 3 天',
-    progress: (s) => `${Math.min(s?.streakDays ?? 0, 3)}/3`,
-    remainingText: (s) => {
-      const left = Math.max(0, 3 - (s?.streakDays ?? 0))
-      return left === 0 ? '已達成' : `還差 ${left} 天`
-    },
-  },
-  {
-    id: 'levelup_3',
-    icon: '🎖️',
-    name: '升級三次',
-    meaning: '你的口說能力正持續升級。',
-    unlock: '累積升級 3 次',
-    progress: (s) => `${Math.min(s?.levelUpCount ?? 0, 3)}/3`,
-    remainingText: (s) => {
-      const left = Math.max(0, 3 - (s?.levelUpCount ?? 0))
-      return left === 0 ? '已達成' : `還差 ${left} 次`
-    },
-  },
-  {
-    id: 'assist_3',
-    icon: '🏵️',
-    name: '探索者',
-    meaning: '你願意嘗試不同任務與語境，學習更全面。',
-    unlock: '使用過 3 個不同 assistant',
-    progress: (s) => `${Math.min(s?.assistantsUsed?.length ?? 0, 3)}/3`,
-    remainingText: (s) => {
-      const left = Math.max(0, 3 - (s?.assistantsUsed?.length ?? 0))
-      return left === 0 ? '已達成' : `還差 ${left} 個`
-    },
-  },
-  {
-    id: 'msg_100',
-    icon: '🎗️',
-    name: '百句達成',
-    meaning: '你累積了大量輸出練習，進步會很明顯。',
-    unlock: '累積送出 100 則訊息',
-    progress: (s) => `${Math.min(s?.totalMessages ?? 0, 100)}/100`,
-    remainingText: (s) => {
-      const left = Math.max(0, 100 - (s?.totalMessages ?? 0))
-      return left === 0 ? '已達成' : `還差 ${left} 則`
-    },
-  },
-  {
-    id: 'voice_master',
-    icon: '🎙️',
-    name: '語音達人',
-    meaning: '你更願意開口練習，口說能力會進步神速！',
-    unlock: '累積使用 5 次語音輸入',
-    progress: (s) => `${Math.min(s?.voiceCount ?? 0, 5)}/5`,
-    remainingText: (s) => {
-      const left = Math.max(0, 5 - (s?.voiceCount ?? 0))
-      return left === 0 ? '已達成' : `還差 ${left} 次`
-    },
-  },
-]
+
 const fixedPanelSx = {
   borderRadius: 3,
   height: 360,
@@ -796,24 +734,36 @@ function CefrColumn({ title, assistants = [], source, mongoUserId }) {
   )
 }
 
-function BadgeAccordionPanel({ stats = {}, earnedIds = [], loading }) {
+function BadgeAccordionPanel({
+  stats = {},
+  earnedIds = [],
+  legacyEarnedIds = [],
+  loading,
+  source,
+}) {
   const [filter, setFilter] = useState('all')
 
-  const safeEarnedIds = Array.isArray(earnedIds) ? earnedIds : []
-  const earnedSet = useMemo(() => new Set(safeEarnedIds), [safeEarnedIds])
+  const badges = useMemo(() => getBadgesForSource(source), [source])
+  const activeEarnedIds = useMemo(
+    () => filterActiveEarnedIds(earnedIds),
+    [earnedIds],
+  )
+  const earnedSet = useMemo(() => new Set(activeEarnedIds), [activeEarnedIds])
+  const showLegacyNote =
+    legacyEarnedIds.length > 0 || hasLegacyEarnedIds(earnedIds)
 
-  const earnedCount = BADGES.filter((b) => earnedSet.has(b.id)).length
-  const totalCount = BADGES.length
+  const earnedCount = badges.filter((b) => earnedSet.has(b.id)).length
+  const totalCount = badges.length
 
   const filteredBadges = useMemo(() => {
     if (filter === 'earned') {
-      return BADGES.filter((b) => earnedSet.has(b.id))
+      return badges.filter((b) => earnedSet.has(b.id))
     }
     if (filter === 'locked') {
-      return BADGES.filter((b) => !earnedSet.has(b.id))
+      return badges.filter((b) => !earnedSet.has(b.id))
     }
-    return BADGES
-  }, [filter, earnedSet])
+    return badges
+  }, [filter, earnedSet, badges])
 
   return (
     <Card variant='outlined' sx={fixedPanelSx}>
@@ -831,8 +781,16 @@ function BadgeAccordionPanel({ stats = {}, earnedIds = [], loading }) {
                 徽章總覽
               </Typography>
               <Typography variant='body2' sx={{ opacity: 0.7 }}>
-                已獲得 {earnedCount} / {totalCount}
+                對齊口說成績標準 · 已獲得 {earnedCount} / {totalCount}
               </Typography>
+              {showLegacyNote ? (
+                <Typography
+                  variant='caption'
+                  sx={{ opacity: 0.55, display: 'block', mt: 0.25 }}
+                >
+                  帳號含舊版獎章紀錄，現行制度以 6 枚成績獎章為準
+                </Typography>
+              ) : null}
             </Box>
 
             <ToggleButtonGroup
@@ -970,6 +928,11 @@ function BadgeAccordionPanel({ stats = {}, earnedIds = [], loading }) {
                         <Typography variant='body2'>
                           <b>解鎖條件：</b> {badge.unlock}
                         </Typography>
+                        {badge.gradeNote ? (
+                          <Typography variant='body2' sx={{ opacity: 0.75 }}>
+                            <b>成績對應：</b> {badge.gradeNote}
+                          </Typography>
+                        ) : null}
                         <Typography variant='body2'>
                           <b>目前進度：</b> {earned ? '已達成' : progressText}
                         </Typography>
@@ -1197,8 +1160,10 @@ export default function Overview({
   const loading = !data && !err
 
   const stats = data?.stats ?? {}
+  const badgeStats = data?.badge?.stats ?? {}
   const mongoUserId = data?.mongoUserId || ''
   const earnedBadgeIds = data?.badge?.earnedIds ?? []
+  const legacyBadgeIds = data?.badge?.legacyEarnedIds ?? []
   const ts = data?.timeseries ?? { labels: [] }
   const labels = ts.labels ?? []
 
@@ -1403,9 +1368,11 @@ export default function Overview({
         {/* 圖表 C: 徽章總覽 */}
         <Grid item size={{ xs: 12, md: 4 }}>
           <BadgeAccordionPanel
-            stats={stats}
+            stats={badgeStats}
             earnedIds={earnedBadgeIds}
+            legacyEarnedIds={legacyBadgeIds}
             loading={loading}
+            source={source}
           />
         </Grid>
       </Grid>

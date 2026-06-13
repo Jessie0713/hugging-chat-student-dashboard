@@ -199,10 +199,199 @@ JSON 格式必須完全符合下面結構：
         }
         return {"text": f"AI 分析發生錯誤: {str(e)}"}
 
+# CEFR levelKey → 外顯練習等級（與 Chat UI / Dashboard 一致）
+CEFR_TO_PRACTICE_TIER: dict[str, str] = {
+    "PreA1": "入門",
+    "A1": "基礎",
+    "A2": "基礎",
+    "B1": "進階",
+    "B2": "進階",
+    "C1": "高階",
+    "C2": "高階",
+    "C1C2": "高階",
+}
+
+ACTIVE_ACHIEVEMENT_BADGE_IDS = {
+    "first_message",
+    "effective_round",
+    "topics_5",
+    "topics_6",
+    "topics_7",
+    "advanced_cert",
+}
+
+
+def _practice_tier_from_level_key(level_key: str | None) -> str | None:
+    if not level_key:
+        return None
+    return CEFR_TO_PRACTICE_TIER.get(level_key.strip())
+
+
+def _normalize_achievement_badge_stats(badge_stats: dict) -> dict:
+    """對齊 Chat UI users.badge.stats；舊欄位 fallback 避免舊資料全 0。"""
+    per_assistant = badge_stats.get("perAssistant")
+    if not isinstance(per_assistant, dict):
+        per_assistant = {}
+
+    if not per_assistant:
+        qualified = badge_stats.get("qualifiedByAssistant") or {}
+        effective_ids = {
+            str(x) for x in (badge_stats.get("effectiveAssistantIds") or [])
+        }
+        for aid, count in qualified.items():
+            aid_str = str(aid)
+            ec = int(count or 0)
+            per_assistant[aid_str] = {
+                "effectiveCount": min(max(ec, 0), 8),
+                "effectiveRoundComplete": aid_str in effective_ids or ec >= 8,
+            }
+
+    completed = badge_stats.get("completedTopicCount")
+    if completed is None:
+        completed = sum(
+            1
+            for v in per_assistant.values()
+            if isinstance(v, dict) and v.get("effectiveRoundComplete")
+        )
+
+    max_eff = badge_stats.get("maxEffectiveCount")
+    if max_eff is None:
+        counts = [
+            int(v.get("effectiveCount") or 0)
+            for v in per_assistant.values()
+            if isinstance(v, dict)
+        ]
+        max_eff = max(counts) if counts else 0
+
+    advanced = badge_stats.get("advancedTopicCount")
+    if advanced is None:
+        advanced = len(badge_stats.get("effectiveAdvancedAssistantIds") or [])
+
+    normalized_per: dict[str, dict] = {}
+    for aid, info in per_assistant.items():
+        if not isinstance(info, dict):
+            continue
+        ec = min(max(int(info.get("effectiveCount") or 0), 0), 8)
+        normalized_per[str(aid)] = {
+            "effectiveCount": ec,
+            "effectiveRoundComplete": bool(
+                info.get("effectiveRoundComplete") or ec >= 8
+            ),
+        }
+
+    return {
+        "totalMessages": int(badge_stats.get("totalMessages") or 0),
+        "perAssistant": normalized_per,
+        "completedTopicCount": int(completed or 0),
+        "advancedTopicCount": int(advanced or 0),
+        "maxEffectiveCount": int(max_eff or 0),
+    }
+
+
+def compute_grade_estimate(stats: dict, earned_ids: list) -> dict:
+    earned = set(earned_ids or [])
+    completed = int(stats.get("completedTopicCount") or 0)
+    advanced = int(stats.get("advancedTopicCount") or 0)
+
+    score = None
+    score_label = "尚未達標"
+    badge_id = None
+
+    if "topics_7" in earned or completed >= 7:
+        score, score_label, badge_id = 100, "滿分", "topics_7"
+    elif "topics_6" in earned or completed >= 6:
+        score, score_label, badge_id = 85, "優秀", "topics_6"
+    elif "topics_5" in earned or completed >= 5:
+        score, score_label, badge_id = 65, "及格線", "topics_5"
+
+    return {
+        "score": score,
+        "scoreLabel": score_label,
+        "badgeId": badge_id,
+        "completedTopicCount": completed,
+        "advancedTopicCount": advanced,
+        "levelRequirementMet": "advanced_cert" in earned or advanced >= 4,
+    }
+
+
+async def build_badge_topic_details(
+    db,
+    user: dict,
+    badge_stats: dict,
+) -> list[dict]:
+    per_assistant = badge_stats.get("perAssistant") or {}
+    agent_map: dict[str, dict] = {}
+    for entry in user.get("agentCefr") or []:
+        aid = entry.get("assistantId")
+        if aid is not None:
+            agent_map[str(aid)] = entry
+
+    assistant_ids = list(per_assistant.keys())
+    name_map = await build_assistant_name_map(db, assistant_ids)
+
+    details = []
+    for aid, info in per_assistant.items():
+        if not isinstance(info, dict):
+            continue
+        agent = agent_map.get(aid, {})
+        level_key = agent.get("levelKey")
+        details.append({
+            "assistantId": aid,
+            "assistantName": name_map.get(aid, aid),
+            "effectiveCount": int(info.get("effectiveCount") or 0),
+            "effectiveRoundComplete": bool(info.get("effectiveRoundComplete")),
+            "practiceTier": _practice_tier_from_level_key(level_key),
+            "levelKey": level_key,
+        })
+
+    details.sort(
+        key=lambda x: (
+            not x.get("effectiveRoundComplete"),
+            -(x.get("effectiveCount") or 0),
+            x.get("assistantName") or "",
+        ),
+    )
+    return details
+
+
+def build_badge_payload(badge: dict, source: str) -> dict:
+    """Normalize users.badge；rolling_level / fixed_level 皆用成績制 6 枚獎章。"""
+    badge_stats = badge.get("stats") or {}
+    earned_raw = badge.get("earnedIds") or []
+    earned_ids = earned_raw if isinstance(earned_raw, list) else []
+    inbox = badge.get("inbox") or []
+
+    stats = _normalize_achievement_badge_stats(badge_stats)
+    active_earned = [e for e in earned_ids if e in ACTIVE_ACHIEVEMENT_BADGE_IDS]
+    legacy_earned = [e for e in earned_ids if e not in ACTIVE_ACHIEVEMENT_BADGE_IDS]
+
+    payload = {
+        "earnedIds": active_earned,
+        "legacyEarnedIds": legacy_earned,
+        "inbox": inbox if isinstance(inbox, list) else [],
+        "stats": stats,
+        "gradeEstimate": compute_grade_estimate(stats, active_earned),
+    }
+    return payload
+
+
 @router.get("/{hfUserId}/badges")
 async def badges(source: str, hfUserId: str):
-    # 先回空；你之後可以建 collection: userBadges
-    return {"hfUserId": hfUserId, "badges": []}
+    db = get_db_by_source(source)
+    user = await find_user_by_hf_user_id(db, hfUserId)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found in Mongo users")
+
+    badge_payload = build_badge_payload(user.get("badge") or {}, source)
+    topic_details = await build_badge_topic_details(
+        db, user, badge_payload["stats"]
+    )
+    return {
+        "hfUserId": normalize_hf_user_id(hfUserId),
+        "mongoUserId": str(user["_id"]),
+        "badge": badge_payload,
+        "badgeTopicDetails": topic_details,
+    }
 # backend/student_api.py
 
 
@@ -623,38 +812,23 @@ async def student_overview(source: str, hfUserId: str):
         cefr_name_map = await build_assistant_name_map(db, cefr_assistant_ids)
         cefr_groups = build_cefr_groups_from_agent_cefr(agent_cefr, cefr_name_map)
     # ---- badge data
-    badge = user.get("badge") or {}
-    badge_stats = badge.get("stats") or {}
+    badge_payload = build_badge_payload(user.get("badge") or {}, source)
 
-    earned_ids = badge.get("earnedIds") or []
-    inbox = badge.get("inbox") or []
-
-    badge_payload = {
-        "earnedIds": earned_ids if isinstance(earned_ids, list) else [],
-        "inbox": inbox if isinstance(inbox, list) else [],
-        "stats": {
-            "lastActiveDate": badge_stats.get("lastActiveDate"),
-            "streakDays": int(badge_stats.get("streakDays") or 0),
-            "totalMessages": int(badge_stats.get("totalMessages") or 0),
-            "voiceCount": int(badge_stats.get("voiceCount") or 0),
-            "levelUpCount": int(badge_stats.get("levelUpCount") or 0),
-            "assistantsUsed": badge_stats.get("assistantsUsed") or [],
-        },
+    stats_out = {
+        **stats,
+        "totalMessages": badge_payload["stats"]["totalMessages"],
     }
 
+    badge_topic_details = await build_badge_topic_details(
+        db, user, badge_payload["stats"]
+    )
 
     return {
         "hfUserId": normalize_hf_user_id(hfUserId),
         "mongoUserId": str(user_oid),
-        "stats": {
-            **stats,
-            "streakDays": badge_payload["stats"]["streakDays"],
-            "totalMessages": badge_payload["stats"]["totalMessages"],
-            "voiceCount": badge_payload["stats"]["voiceCount"],
-            "levelUpCount": badge_payload["stats"]["levelUpCount"],
-            "assistantsUsed": badge_payload["stats"]["assistantsUsed"],
-            "lastActiveDate": badge_payload["stats"]["lastActiveDate"],
-        },"badge": badge_payload,
+        "stats": stats_out,
+        "badge": badge_payload,
+        "badgeTopicDetails": badge_topic_details,
         "timeseries": timeseries,
         "assistantUsage": assistant_usage,
         "cefrGroups": cefr_groups,
