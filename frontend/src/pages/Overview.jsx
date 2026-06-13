@@ -40,19 +40,17 @@ import { LineChart } from '@mui/x-charts/LineChart'
 import { PieChart } from '@mui/x-charts/PieChart'
 import { useTheme } from '@mui/material/styles'
 import { apiGet } from '../lib/api'
+import PracticeFitSummaryCard from '../components/PracticeFitSummaryCard'
+import MyPracticePanel from '../components/MyPracticePanel'
+import {
+  cefrToTier,
+  formatNextLevelLabel,
+  groupCefrByTier,
+  TIER_COLORS,
+} from '../lib/levelDisplay'
 
 /** ---------- helpers ---------- */
 const CEFR_ORDER = ['PreA1', 'A1', 'A2', 'B1', 'B2', 'C1', 'C2', 'C1C2']
-const CEFR_TITLES = {
-  PreA1: 'Pre-A1 (初階)',
-  A1: 'A1 (入門級)',
-  A2: 'A2 (基礎級)',
-  B1: 'B1 (中級)',
-  B2: 'B2 (進階級)',
-  C1: 'C1 (高階)',
-  C2: 'C2 (精通級)',
-  C1C2: 'C1-C2 (高階)',
-}
 
 // 與後端 /api/cefr/trends/daily 的 tz（預設 Asia/Taipei）對齊
 const CEFR_TREND_TZ = 'Asia/Taipei'
@@ -212,9 +210,23 @@ function CefrTaipeiAxisTooltipContent({ mode, sx }) {
   )
 }
 
-// CEFR numeric (0~5) -> levelKey；用來畫 Y 軸 tick
+// CEFR numeric (0~5) 畫線；Y 軸只顯示四大階，避免 A1/A2 都標「基礎」重複
 const LEVEL_KEYS = ['PreA1', 'A1', 'A2', 'B1', 'B2', 'C1C2']
-const levelTickFormat = (v) => LEVEL_KEYS[Math.round(Number(v))] ?? ''
+const CEFR_TREND_Y_TICKS = [0, 2, 4, 5]
+
+function levelAxisTickFormat(v) {
+  const n = Math.round(Number(v))
+  if (Number.isNaN(n)) return ''
+  if (n <= 0) return '入門'
+  if (n <= 2) return '基礎'
+  if (n <= 4) return '進階'
+  return '高階'
+}
+
+const levelTickFormat = (v) => {
+  const key = LEVEL_KEYS[Math.round(Number(v))]
+  return key ? cefrToTier(key) : ''
+}
 
 function orderIndex(levelKey) {
   const i = CEFR_ORDER.indexOf(levelKey)
@@ -250,7 +262,7 @@ const BADGES = [
     icon: '🎖️',
     name: '升級三次',
     meaning: '你的口說能力正持續升級。',
-    unlock: 'CEFR 累積升級 3 次',
+    unlock: '累積升級 3 次',
     progress: (s) => `${Math.min(s?.levelUpCount ?? 0, 3)}/3`,
     remainingText: (s) => {
       const left = Math.max(0, 3 - (s?.levelUpCount ?? 0))
@@ -538,7 +550,7 @@ function CefrTrendChart({
     return (
       <Box sx={{ height, display: 'grid', placeItems: 'center' }}>
         <Typography variant='caption' sx={{ opacity: 0.6 }}>
-          目前沒有 CEFR 紀錄
+          目前沒有等級紀錄
         </Typography>
       </Box>
     )
@@ -547,14 +559,14 @@ function CefrTrendChart({
   return (
     <LineChart
       xAxis={xAxis}
-      yAxis={[
-        {
-          min: 0,
-          max: 5,
-          tickInterval: [0, 1, 2, 3, 4, 5],
-          valueFormatter: levelTickFormat,
-        },
-      ]}
+        yAxis={[
+          {
+            min: 0,
+            max: 5,
+            tickInterval: CEFR_TREND_Y_TICKS,
+            valueFormatter: levelAxisTickFormat,
+          },
+        ]}
       series={[
         {
           data: ys,
@@ -567,7 +579,7 @@ function CefrTrendChart({
             const idx = ctx?.dataIndex ?? 0
             const p = points[idx]
             if (!p) return String(v)
-            const lk = p.levelKey || levelTickFormat(v)
+            const lk = cefrToTier(p.levelKey) || levelTickFormat(v)
             const conf =
               p.confidence != null
                 ? ` (信心 ${Number(p.confidence).toFixed(2)})`
@@ -594,34 +606,15 @@ function CefrPieCard({ cefrGroups = [], loading }) {
   const theme = useTheme()
 
   const { seriesData, colors } = useMemo(() => {
-    const counts = {}
-    cefrGroups.forEach((g) => {
-      const key = g.levelKey || 'Unknown'
-      counts[key] = (counts[key] || 0) + (g.assistants?.length || 0)
-    })
-
-    const labels = Object.keys(counts).sort(
-      (a, b) => orderIndex(a) - orderIndex(b),
-    )
-
-    const colorMap = {
-      PreA1: '#e0f2f1',
-      A1: '#b2dfdb',
-      A2: '#80cbc4',
-      B1: '#4db6ac',
-      B2: '#26a69a',
-      C1: '#009688',
-      C2: '#00796b',
-    }
-
-    const data = labels.map((lbl, idx) => ({
+    const tierGroups = groupCefrByTier(cefrGroups)
+    const data = tierGroups.map((g, idx) => ({
       id: idx,
-      value: counts[lbl],
-      label: lbl,
+      value: g.assistants.length,
+      label: g.tier,
     }))
 
-    const chartColors = labels.map(
-      (lbl) => colorMap[lbl] || theme.palette.grey[400],
+    const chartColors = tierGroups.map(
+      (g) => TIER_COLORS[g.tier] || theme.palette.grey[400],
     )
 
     if (data.length === 0) {
@@ -638,7 +631,7 @@ function CefrPieCard({ cefrGroups = [], loading }) {
     <Card variant='outlined' sx={fixedPanelSx}>
       <CardContent sx={fixedContentSx}>
         <Typography variant='h6' sx={{ fontWeight: 900, mb: 1 }}>
-          CEFR 等級分佈
+          等級分佈
         </Typography>
         {loading ? (
           <Box sx={{ py: 6, display: 'grid', placeItems: 'center' }}>
@@ -718,13 +711,16 @@ function CefrColumn({ title, assistants = [], source, mongoUserId }) {
                     flexWrap='wrap'
                   >
                     {a.levelKey && (
-                      <Chip size='small' label={`目前：${a.levelKey}`} />
+                      <Chip
+                        size='small'
+                        label={`目前：${cefrToTier(a.levelKey)}`}
+                      />
                     )}
                     {a.nextLevelKey && (
                       <Chip
                         size='small'
                         variant='outlined'
-                        label={`下一階：${a.nextLevelKey}`}
+                        label={`下一階：${formatNextLevelLabel(a.levelKey, a.nextLevelKey)}`}
                       />
                     )}
                     {a.confidence != null && (
@@ -743,7 +739,7 @@ function CefrColumn({ title, assistants = [], source, mongoUserId }) {
                         variant='subtitle2'
                         sx={{ fontWeight: 900, mb: 0.25 }}
                       >
-                        CEFR 趨勢
+                        等級趨勢
                       </Typography>
                       <CefrTrendChart
                         source={source}
@@ -1048,10 +1044,10 @@ function OverallCefrTrendCard({
         >
           <Box>
             <Typography variant='h6' sx={{ fontWeight: 900 }}>
-              整體 CEFR 趨勢
+              整體等級趨勢
             </Typography>
             <Typography variant='body2' sx={{ opacity: 0.7 }}>
-              依時間追蹤學生的 CEFR 等級變化（讀取 cefrEvents）
+              依時間追蹤學生的等級變化
             </Typography>
           </Box>
 
@@ -1165,7 +1161,12 @@ function OverallCefrTrendCard({
 }
 
 /** ---------- page ---------- */
-export default function Overview() {
+export default function Overview({
+  showOverallCefrTrend = true,
+  showCefrAdvice = true,
+  useScenarioLevels = false,
+  fixedLevelErrorHint = false,
+}) {
   const { source, hfUserId } = useParams()
 
   const [data, setData] = useState(null)
@@ -1218,6 +1219,16 @@ export default function Overview() {
     )
   }, [data])
 
+  const tierGroups = useMemo(
+    () => groupCefrByTier(cefrGroups),
+    [cefrGroups],
+  )
+
+  const recentPractice = useMemo(() => {
+    const arr = Array.isArray(data?.recentPractice) ? data.recentPractice : []
+    return arr
+  }, [data])
+
   // 整體趨勢圖的 assistant 下拉：去重後的 (assistantId, assistantName)
   const assistantOptions = useMemo(() => {
     const map = new Map()
@@ -1235,6 +1246,8 @@ export default function Overview() {
   }, [cefrGroups])
 
   if (err) {
+    const userMissing =
+      /user not found/i.test(err) || /找不到/i.test(err)
     return (
       <Card variant='outlined'>
         <CardContent>
@@ -1242,6 +1255,16 @@ export default function Overview() {
             讀取失敗
           </Typography>
           <Typography sx={{ whiteSpace: 'pre-wrap', mt: 1 }}>{err}</Typography>
+          {fixedLevelErrorHint && userMissing ? (
+            <Typography variant='body2' sx={{ mt: 2, opacity: 0.85 }}>
+              fixed_level（固定等級系統）讀取的是資料庫{' '}
+              <code>FIXED_LEVEL_MONGO_DB</code>
+              （預設 <code>chat-ui-control</code>）。若該 hfUserId 只在{' '}
+              <code>rolling_level</code>（滾動式調整系統，預設 <code>chat-ui</code>
+              ）存在，請改選 rolling_level，或在 fixed_level 對應庫的{' '}
+              <code>users</code> 集合確認是否有對應的 hfUserId。
+            </Typography>
+          ) : null}
         </CardContent>
       </Card>
     )
@@ -1365,9 +1388,16 @@ export default function Overview() {
           </Card>
         </Grid>
 
-        {/* 圖表 B: CEFR 分佈 (Pie) */}
+        {/* 圖表 B: fixed_level 適配概況 / rolling_level 等級分佈 */}
         <Grid item size={{ xs: 12, md: 4 }}>
-          <CefrPieCard cefrGroups={cefrGroups} loading={loading} />
+          {useScenarioLevels ? (
+            <PracticeFitSummaryCard
+              recentPractice={recentPractice}
+              loading={loading}
+            />
+          ) : (
+            <CefrPieCard cefrGroups={cefrGroups} loading={loading} />
+          )}
         </Grid>
 
         {/* 圖表 C: 徽章總覽 */}
@@ -1380,62 +1410,81 @@ export default function Overview() {
         </Grid>
       </Grid>
 
-      {/* 3. 第三列：整體 CEFR 趨勢圖 */}
-      <Grid container spacing={2} sx={{ mb: 2 }}>
-        <Grid item size={{ xs: 12 }}>
-          <OverallCefrTrendCard
-            source={source}
-            mongoUserId={mongoUserId}
-            assistantOptions={assistantOptions}
-            loading={loading}
-          />
+      {useScenarioLevels ? (
+        <Grid container spacing={2} sx={{ mb: 2 }}>
+          <Grid item size={{ xs: 12 }}>
+            <MyPracticePanel
+              recentPractice={recentPractice}
+              loading={loading}
+              source={source}
+              mongoUserId={mongoUserId}
+            />
+          </Grid>
         </Grid>
-      </Grid>
+      ) : null}
 
-      {/* 4. 第四列：CEFR 詳細建議 */}
-      <Grid container spacing={2}>
-        <Grid item size={{ xs: 12 }}>
-          <Card variant='outlined' sx={{ borderRadius: 3 }}>
-            <CardContent>
-              <Stack direction='row' alignItems='baseline' spacing={1}>
-                <Typography variant='h6' sx={{ fontWeight: 900 }}>
-                  CEFR 詳細建議
-                </Typography>
-                <Typography variant='body2' sx={{ opacity: 0.7 }}>
-                  根據各情境表現分析（含每個 assistant 的趨勢圖）
-                </Typography>
-              </Stack>
-              <Divider sx={{ my: 1.5 }} />
-
-              {loading ? (
-                <Box sx={{ py: 3, display: 'grid', placeItems: 'center' }}>
-                  <CircularProgress size={22} />
-                </Box>
-              ) : (
-                <Grid container spacing={2}>
-                  {cefrGroups.map((g) => (
-                    <Grid key={g.levelKey} item size={{ xs: 12, sm: 6, lg: 4 }}>
-                      <CefrColumn
-                        title={g.title || CEFR_TITLES[g.levelKey] || g.levelKey}
-                        assistants={g.assistants || []}
-                        source={source}
-                        mongoUserId={mongoUserId}
-                      />
-                    </Grid>
-                  ))}
-                  {!cefrGroups.length && (
-                    <Grid item xs={12}>
-                      <Typography variant='body2' sx={{ opacity: 0.7 }}>
-                        目前沒有 CEFR 建議資料
-                      </Typography>
-                    </Grid>
-                  )}
-                </Grid>
-              )}
-            </CardContent>
-          </Card>
+      {showOverallCefrTrend ? (
+        <Grid container spacing={2} sx={{ mb: 2 }}>
+          <Grid item size={{ xs: 12 }}>
+            <OverallCefrTrendCard
+              source={source}
+              mongoUserId={mongoUserId}
+              assistantOptions={assistantOptions}
+              loading={loading}
+            />
+          </Grid>
         </Grid>
-      </Grid>
+      ) : null}
+
+      {showCefrAdvice ? (
+        <Grid container spacing={2}>
+          <Grid item size={{ xs: 12 }}>
+            <Card variant='outlined' sx={{ borderRadius: 3 }}>
+              <CardContent>
+                <Stack direction='row' alignItems='baseline' spacing={1}>
+                  <Typography variant='h6' sx={{ fontWeight: 900 }}>
+                    詳細建議
+                  </Typography>
+                  <Typography variant='body2' sx={{ opacity: 0.7 }}>
+                    根據各情境表現分析（含每個情境的等級趨勢圖）
+                  </Typography>
+                </Stack>
+                <Divider sx={{ my: 1.5 }} />
+
+                {loading ? (
+                  <Box sx={{ py: 3, display: 'grid', placeItems: 'center' }}>
+                    <CircularProgress size={22} />
+                  </Box>
+                ) : (
+                  <Grid container spacing={2}>
+                    {tierGroups.map((g) => (
+                      <Grid
+                        key={g.tier}
+                        item
+                        size={{ xs: 12, sm: 6, lg: 4 }}
+                      >
+                        <CefrColumn
+                          title={g.title}
+                          assistants={g.assistants}
+                          source={source}
+                          mongoUserId={mongoUserId}
+                        />
+                      </Grid>
+                    ))}
+                    {!tierGroups.length && (
+                      <Grid item xs={12}>
+                        <Typography variant='body2' sx={{ opacity: 0.7 }}>
+                          目前沒有建議資料
+                        </Typography>
+                      </Grid>
+                    )}
+                  </Grid>
+                )}
+              </CardContent>
+            </Card>
+          </Grid>
+        </Grid>
+      ) : null}
     </Box>
   )
 }

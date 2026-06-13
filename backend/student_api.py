@@ -10,7 +10,7 @@ import json
 from fastapi import APIRouter, HTTPException, Query
 from bson import ObjectId
 
-from mongo_db import get_db_by_source
+from mongo_db import get_db_by_source, normalize_source
 from db import fetch_one  # 你已經有 Moodle 的連線工具
 from azure_openai import azure_chat
 router = APIRouter(prefix="/api/{source}/student", tags=["student"])
@@ -321,6 +321,110 @@ async def build_assistant_name_map(db, assistant_ids: list[Any]) -> dict[str, st
     return m
 
 # ----------------------------
+# fixed_level: conversations.cefr → 最近 N 筆聊天練習
+# ----------------------------
+
+def _as_utc_datetime(value: Any) -> datetime | None:
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+    return None
+
+
+def build_recent_practice(
+    convs: list[dict],
+    assistant_name_map: dict[str, str],
+    limit: int = 15,
+) -> tuple[list[dict], dict[str, int]]:
+    """fixed_level：每個有 cefr 的 conversation 一筆，依 updatedAt 取最近 N 筆。"""
+    candidates: list[dict] = []
+
+    for conv in convs:
+        cefr = conv.get("cefr")
+        if not cefr or not isinstance(cefr, dict):
+            continue
+        sort_ts = _as_utc_datetime(conv.get("updatedAt") or conv.get("createdAt"))
+        if sort_ts is None:
+            continue
+
+        aid = conv.get("assistantId")
+        aid_str = str(aid) if aid is not None else ""
+        title = (conv.get("title") or "").strip()
+        updated_at = conv.get("updatedAt") or conv.get("createdAt")
+
+        candidates.append({
+            "conversationId": str(conv["_id"]),
+            "assistantId": aid_str,
+            "assistantName": assistant_name_map.get(aid_str, aid_str),
+            "conversationTitle": title or None,
+            "targetProductTier": cefr.get("targetProductTier"),
+            "targetBandLow": cefr.get("targetBandLow"),
+            "targetBandHigh": cefr.get("targetBandHigh"),
+            "levelKey": cefr.get("levelKey"),
+            "nextLevelKey": cefr.get("nextLevelKey"),
+            "confidence": cefr.get("confidence"),
+            "fitStatus": cefr.get("fitStatus"),
+            "assessedUserTurns": cefr.get("assessedUserTurns"),
+            "lastEvalLevelKey": cefr.get("lastEvalLevelKey"),
+            "advice": cefr.get("advice") or {},
+            "updatedAt": updated_at,
+            "_sortTs": sort_ts,
+        })
+
+    candidates.sort(key=lambda x: x["_sortTs"], reverse=True)
+    recent = candidates[:limit]
+    for item in recent:
+        item.pop("_sortTs", None)
+
+    fit_summary: dict[str, int] = {
+        "matched": 0,
+        "unmatched": 0,
+    }
+    for item in recent:
+        status = item.get("fitStatus")
+        if status in ("in_band", "too_easy"):
+            fit_summary["matched"] += 1
+        else:
+            fit_summary["unmatched"] += 1
+
+    return recent, fit_summary
+
+
+def build_cefr_groups_from_agent_cefr(
+    agent_cefr: list[dict],
+    cefr_name_map: dict[str, str],
+) -> list[dict]:
+    groups: dict[str, list[dict]] = defaultdict(list)
+    for x in agent_cefr:
+        level = (x.get("levelKey") or "Unknown").strip()
+        aid = x.get("assistantId")
+        aid_str = str(aid) if aid is not None else ""
+        groups[level].append({
+            "assistantId": aid_str,
+            "assistantName": cefr_name_map.get(aid_str, aid_str),
+            "levelKey": x.get("levelKey"),
+            "nextLevelKey": x.get("nextLevelKey"),
+            "confidence": x.get("confidence"),
+            "updatedAt": x.get("updatedAt"),
+            "advice": x.get("advice") or {},
+        })
+
+    order = ["PreA1", "A1", "A2", "B1", "B2", "C1", "C2", "C1C2"]
+
+    def level_sort_key(k: str) -> int:
+        return order.index(k) if k in order else 999
+
+    cefr_groups = []
+    for level in sorted(groups.keys(), key=level_sort_key):
+        cefr_groups.append({
+            "levelKey": level,
+            "title": level,
+            "assistants": groups[level],
+        })
+    return cefr_groups
+
+# ----------------------------
 # Metrics: 英文佔比 / 詞彙豐富度
 # ----------------------------
 _RE_EN = re.compile(r"[A-Za-z]")
@@ -502,38 +606,22 @@ async def student_overview(source: str, hfUserId: str):
         "avgDurationMin": ts_dur,
     }
 
-    # ---- CEFR groups: users.agentCefr[] 依 levelKey 分組，點 assistant 才看 advice
-    agent_cefr = user.get("agentCefr") or []
-    cefr_assistant_ids = [x.get("assistantId") for x in agent_cefr if x.get("assistantId")]
-    cefr_name_map = await build_assistant_name_map(db, cefr_assistant_ids)
+    is_fixed_level = normalize_source(source) == "fixed_level"
+    recent_practice: list[dict] = []
+    fit_summary: dict[str, int] = {}
+    cefr_groups: list[dict] = []
 
-    groups: dict[str, list[dict]] = defaultdict(list)
-    for x in agent_cefr:
-        level = (x.get("levelKey") or "Unknown").strip()
-        aid = x.get("assistantId")
-        aid_str = str(aid) if aid is not None else ""
-        groups[level].append({
-            "assistantId": aid_str,
-            "assistantName": cefr_name_map.get(aid_str, aid_str),
-            "levelKey": x.get("levelKey"),
-            "nextLevelKey": x.get("nextLevelKey"),
-            "confidence": x.get("confidence"),
-            "updatedAt": x.get("updatedAt"),
-            "advice": x.get("advice") or {},
-        })
-
-    # 排序（大概照 CEFR 順序）
-    order = ["PreA1", "A1", "A2", "B1", "B2", "C1", "C2", "C1C2"]
-    def level_sort_key(k: str) -> int:
-        return order.index(k) if k in order else 999
-
-    cefr_groups = []
-    for level in sorted(groups.keys(), key=level_sort_key):
-        cefr_groups.append({
-            "levelKey": level,
-            "title": level,
-            "assistants": groups[level],
-        })
+    if is_fixed_level:
+        recent_practice, fit_summary = build_recent_practice(
+            convs, assistant_name_map
+        )
+    else:
+        agent_cefr = user.get("agentCefr") or []
+        cefr_assistant_ids = [
+            x.get("assistantId") for x in agent_cefr if x.get("assistantId")
+        ]
+        cefr_name_map = await build_assistant_name_map(db, cefr_assistant_ids)
+        cefr_groups = build_cefr_groups_from_agent_cefr(agent_cefr, cefr_name_map)
     # ---- badge data
     badge = user.get("badge") or {}
     badge_stats = badge.get("stats") or {}
@@ -570,5 +658,7 @@ async def student_overview(source: str, hfUserId: str):
         "timeseries": timeseries,
         "assistantUsage": assistant_usage,
         "cefrGroups": cefr_groups,
+        "recentPractice": recent_practice,
+        "fitSummary": fit_summary,
     }
 

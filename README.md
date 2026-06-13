@@ -14,13 +14,13 @@
 # CORS: 允許前端開發站台呼叫後端
 FRONTEND_ORIGIN=http://localhost:5174
 
-# Mongo (source=m7)
-MONGO_URI=mongodb://localhost:27018
-MONGO_DB=chat-ui
+# Mongo — rolling_level（滾動式調整系統，舊 m7 / chat-ui）
+ROLLING_LEVEL_MONGO_URI=mongodb://localhost:27018
+ROLLING_LEVEL_MONGO_DB=chat-ui
 
-# Mongo (source=huggingchat) — 本機直連（預設與 m7 同一 mongod，database 不同）
-HUGGINGCHAT_MONGO_URI=mongodb://localhost:27018
-HUGGINGCHAT_MONGO_DB_NAME=chat-ui-control
+# Mongo — fixed_level（固定等級系統，舊 huggingchat / chat-ui-control）
+FIXED_LEVEL_MONGO_URI=mongodb://localhost:27018
+FIXED_LEVEL_MONGO_DB=chat-ui-control
 
 # Moodle MySQL - Double SSH tunnel（見 backend/db.py）
 SSH1_HOST=
@@ -85,12 +85,14 @@ npm run dev
 
 `source` 目前支援（見 `backend/mongo_db.py`）：
 
-- `m7`：直接連 `MONGO_URI` / `MONGO_DB`
-- `huggingchat`：`HUGGINGCHAT_MONGO_URI`（預設 `mongodb://localhost:27018`），資料庫名 `HUGGINGCHAT_MONGO_DB_NAME`（預設 `chat-ui-control`；亦相容 `EXP_MONGO_DB_NAME`）
+- `rolling_level`（滾動式調整系統）：`ROLLING_LEVEL_MONGO_URI` / `ROLLING_LEVEL_MONGO_DB`（預設 database `chat-ui`）
+- `fixed_level`（固定等級系統）：`FIXED_LEVEL_MONGO_URI` / `FIXED_LEVEL_MONGO_DB`（預設 database `chat-ui-control`）
+
+舊名稱仍相容：`m7` → `rolling_level`、`huggingchat` → `fixed_level`；環境變數亦相容 `MONGO_URI` / `HUGGINGCHAT_MONGO_URI` 等。
 
 範例（測試帳號）：
 
-- `/m7/student/2481643/overview`
+- `/rolling_level/student/2481643/overview`
 
 ## 專案架構
 
@@ -119,8 +121,8 @@ npm run dev
 資料來源：
 
 - **Mongo（Motor）**: `backend/mongo_db.py`
-  - `m7`：`MONGO_URI` / `MONGO_DB`
-  - `huggingchat`：`HUGGINGCHAT_MONGO_URI` / `HUGGINGCHAT_MONGO_DB_NAME`（亦相容 `EXP_MONGO_DB_NAME`）
+  - `rolling_level`：`ROLLING_LEVEL_MONGO_URI` / `ROLLING_LEVEL_MONGO_DB`
+  - `fixed_level`：`FIXED_LEVEL_MONGO_URI` / `FIXED_LEVEL_MONGO_DB`
 - **Moodle MySQL（PyMySQL）**: `backend/db.py`
   - 使用 **Double SSH tunnel** 方式連到 DB（環境變數 `SSH1_*`, `SSH2_*`, `DB_*_API`）
 - **Azure OpenAI**: `backend/azure_openai.py`

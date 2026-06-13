@@ -45,12 +45,15 @@ def _level_from_key(level_key: str | None) -> int | None:
 def _build_match(
     user_oid: ObjectId,
     assistant_oid: ObjectId | None,
+    conversation_oid: ObjectId | None,
     start: datetime | None,
     end: datetime | None,
 ) -> dict[str, Any]:
     match: dict[str, Any] = {"userId": user_oid}
     if assistant_oid is not None:
         match["assistantId"] = assistant_oid
+    if conversation_oid is not None:
+        match["conversationId"] = conversation_oid
 
     if start or end:
         rng: dict[str, Any] = {}
@@ -69,25 +72,31 @@ async def cefr_trends(
     start: datetime | None = Query(None),
     end: datetime | None = Query(None),
     assistant_id: str | None = Query(None),
+    conversation_id: str | None = Query(None),
     limit: int = Query(5000, ge=1, le=20000),
-    source: str = Query("m7"),
+    source: str = Query("rolling_level"),
 ):
     """
     Raw CEFR points（不聚合）。
-    回傳：{ points: [{ ts, levelKey, level, confidence, assistantId, conversationId }] }
+    回傳：{ points: [{ ts, levelKey, level, confidence, fitStatus, assessedUserTurns, assistantId, conversationId }] }
     """
     user_oid = _to_object_id(user_id, "user_id")
     assistant_oid = _to_object_id(assistant_id, "assistant_id") if assistant_id else None
+    conversation_oid = (
+        _to_object_id(conversation_id, "conversation_id") if conversation_id else None
+    )
 
     db = get_db_by_source(source)
 
-    match = _build_match(user_oid, assistant_oid, start, end)
+    match = _build_match(user_oid, assistant_oid, conversation_oid, start, end)
 
     projection = {
         "_id": 0,
         "createdAt": 1,
         "levelKey": 1,
         "confidence": 1,
+        "fitStatus": 1,
+        "assessedUserTurns": 1,
         "assistantId": 1,
         "conversationId": 1,
     }
@@ -109,6 +118,8 @@ async def cefr_trends(
             "levelKey": level_key,
             "level": _level_from_key(level_key),
             "confidence": d.get("confidence"),
+            "fitStatus": d.get("fitStatus"),
+            "assessedUserTurns": d.get("assessedUserTurns"),
             "assistantId": str(d["assistantId"]) if d.get("assistantId") else None,
             "conversationId": str(d["conversationId"]) if d.get("conversationId") else None,
         })
@@ -124,7 +135,7 @@ async def cefr_trends_daily(
     assistant_id: str | None = Query(None),
     tz: str = Query("Asia/Taipei"),
     method: str = Query("avg", pattern="^(avg|median)$"),
-    source: str = Query("m7"),
+    source: str = Query("rolling_level"),
 ):
     """
     Daily aggregation（按天平滑）。
@@ -136,7 +147,7 @@ async def cefr_trends_daily(
 
     db = get_db_by_source(source)
 
-    match = _build_match(user_oid, assistant_oid, start, end)
+    match = _build_match(user_oid, assistant_oid, None, start, end)
 
     # $switch 把 levelKey 映射成 0~5
     add_level = {

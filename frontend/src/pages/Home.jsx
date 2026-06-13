@@ -14,7 +14,7 @@ import {
 
 export default function Home() {
   const [id, setId] = useState('')
-  const [source, setSource] = useState('m7')
+  const [source, setSource] = useState('rolling_level')
   const navigate = useNavigate()
 
   return (
@@ -49,8 +49,12 @@ export default function Home() {
               onChange={(_, v) => v && setSource(v)}
               sx={{ '& .MuiToggleButton-root': { fontWeight: 800 } }}
             >
-              <ToggleButton value='m7'>m7</ToggleButton>
-              <ToggleButton value='huggingchat'>huggingchat</ToggleButton>
+              <ToggleButton value='rolling_level'>
+                滾動式調整（rolling_level）
+              </ToggleButton>
+              <ToggleButton value='fixed_level'>
+                固定等級（fixed_level）
+              </ToggleButton>
             </ToggleButtonGroup>
           </Box>
 
