@@ -20,15 +20,31 @@ def normalize_source(source: str) -> str:
     return SOURCE_ALIASES.get(src, src)
 
 
+def _mongo_uri_from_env(*env_keys: str, source_label: str) -> str:
+    for key in env_keys:
+        val = os.getenv(key)
+        if val and val.strip():
+            return val.strip()
+    keys = ", ".join(env_keys)
+    raise RuntimeError(
+        f"MongoDB URI not configured for {source_label}. "
+        f"Set one of: {keys}"
+    )
+
+
 def _rolling_level_uri() -> str:
-    return os.getenv("ROLLING_LEVEL_MONGO_URI") or os.getenv(
-        "MONGO_URI", "mongodb://localhost:27018"
+    return _mongo_uri_from_env(
+        "ROLLING_LEVEL_MONGO_URI",
+        "MONGO_URI",
+        source_label="rolling_level",
     )
 
 
 def _fixed_level_uri() -> str:
-    return os.getenv("FIXED_LEVEL_MONGO_URI") or os.getenv(
-        "HUGGINGCHAT_MONGO_URI", "mongodb://localhost:27018"
+    return _mongo_uri_from_env(
+        "FIXED_LEVEL_MONGO_URI",
+        "HUGGINGCHAT_MONGO_URI",
+        source_label="fixed_level",
     )
 
 

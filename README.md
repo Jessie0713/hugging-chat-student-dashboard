@@ -15,11 +15,11 @@
 FRONTEND_ORIGIN=http://localhost:5174
 
 # Mongo — rolling_level（滾動式調整系統，舊 m7 / chat-ui）
-ROLLING_LEVEL_MONGO_URI=mongodb://localhost:27018
+ROLLING_LEVEL_MONGO_URI=mongodb://<host>:<port>
 ROLLING_LEVEL_MONGO_DB=chat-ui
 
 # Mongo — fixed_level（固定等級系統，舊 huggingchat / chat-ui-control）
-FIXED_LEVEL_MONGO_URI=mongodb://localhost:27018
+FIXED_LEVEL_MONGO_URI=mongodb://<host>:<port>
 FIXED_LEVEL_MONGO_DB=chat-ui-control
 
 # Moodle MySQL - Double SSH tunnel（見 backend/db.py）
