@@ -9,6 +9,8 @@ import {
   Typography,
 } from '@mui/material'
 
+import { radii, type } from '../theme/tokens'
+
 function TopicRow({ topic }) {
   const count = topic.effectiveCount ?? 0
   const complete = topic.effectiveRoundComplete
@@ -62,12 +64,12 @@ export default function BadgeTopicProgressCard({ topics = [], loading }) {
   const hasTopics = topics.length > 0
 
   return (
-    <Card variant='outlined' sx={{ borderRadius: 3 }}>
+    <Card variant='outlined' sx={{ borderRadius: `${radii.lg}px` }}>
       <CardContent>
-        <Typography variant='h6' sx={{ fontWeight: 900, mb: 0.25 }}>
+        <Typography sx={{ ...type.sectionTitle, mb: 0.25 }}>
           逐題有效練習
         </Typography>
-        <Typography variant='body2' sx={{ opacity: 0.7, mb: 1.5 }}>
+        <Typography sx={{ ...type.subtitle, mb: 1.5 }}>
           合格回應須為語音、全英文，且 ≥2 句或單句 &gt;10 字
         </Typography>
 

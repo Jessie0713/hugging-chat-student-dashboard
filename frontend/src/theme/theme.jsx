@@ -1,43 +1,53 @@
 import { createTheme } from '@mui/material'
+import { colors, cssVariables, type, radii, accordionCardSx } from './tokens'
 
 const theme = createTheme({
-  // 1. Palette: 保留你的顏色定義，加入他們的背景色
   palette: {
     primary: {
-      main: '#54a9c0',
-      b: '#bfe1ea',
-      c: '#e6faff',
+      main: colors.leaf,
+      light: colors.sageSoft,
+      dark: colors.leafDark,
+      contrastText: colors.white,
+      // 相容舊程式用 primary.b / primary.c
+      b: colors.sageSoft,
+      c: colors.wash,
     },
     secondary: {
-      main: '#62c2b6',
-      b: '#d3f0ec',
+      main: colors.sage,
+      light: colors.sageSoft,
+      dark: colors.leafDark,
+      contrastText: colors.white,
+      b: colors.sageSoft,
     },
     notice: {
-      main: '#f4857f',
-      c: '#e6faff',
+      main: colors.notice,
+      c: colors.wash,
     },
     success: {
-      main: '#68C6C8',
+      main: colors.leaf,
+      light: colors.sageSoft,
+      dark: colors.leafDark,
     },
     error: {
-      light: '#db807c',
-      main: '#CC4A44',
+      light: colors.errorLight,
+      main: colors.error,
     },
-    // 注意：MUI 預設是用 'grey' (英式拼寫)，你的 'gray' 是自定義擴充，保留不動以免報錯
     gray: {
-      main: '#f2f2f2',
-      d: '#666',
+      main: colors.gray,
+      d: colors.grayDark,
     },
-    // [新增] 這是為了跟對方背景一致 (來自 tailwind.config.js customBg)
+    text: {
+      primary: colors.ink,
+      secondary: colors.muted,
+    },
+    divider: colors.line,
     background: {
-      default: '#f8f8f8',
-      paper: '#ffffff',
+      default: colors.wash,
+      paper: colors.paper,
     },
   },
 
-  // 2. Typography: 保留你的大小(h1-h6)設定，融入他們的字體(FontFamily)
   typography: {
-    // [新增] 統一字體，讓質感跟對方一致 (來自 index.css)
     fontFamily: [
       'system-ui',
       '"Microsoft JhengHei"',
@@ -45,48 +55,169 @@ const theme = createTheme({
       'Arial',
       'sans-serif',
     ].join(','),
-
-    // [保留] 你原本定義的大小與粗細
     h1: {
       fontSize: '30px',
-      fontWeight: 'bold',
+      fontWeight: 800,
+      color: colors.ink,
     },
     h2: {
       fontSize: '28px',
-      fontWeight: 'bold',
+      fontWeight: 800,
+      color: colors.ink,
     },
     h3: {
-      fontSize: '18px',
-      fontWeight: 'bolder',
+      fontSize: '20px',
+      fontWeight: 800,
+      color: colors.ink,
+      lineHeight: 1.3,
     },
     h4: {
       fontSize: '16px',
+      fontWeight: 800,
+      color: colors.ink,
     },
     h5: {
       fontSize: '14px',
+      fontWeight: 800,
+      color: colors.ink,
     },
     h6: {
+      fontSize: '16px',
+      fontWeight: 800,
+      color: colors.ink,
+      lineHeight: 1.35,
+    },
+    subtitle1: {
+      fontSize: '14px',
+      fontWeight: 800,
+      color: colors.ink,
+      lineHeight: 1.4,
+    },
+    subtitle2: {
+      fontSize: '14px',
+      fontWeight: 800,
+      color: colors.ink,
+      lineHeight: 1.4,
+    },
+    body1: {
+      fontSize: '14px',
+      fontWeight: 400,
+      color: colors.ink,
+      lineHeight: 1.5,
+    },
+    body2: {
+      fontSize: '14px',
+      fontWeight: 400,
+      color: colors.muted,
+      lineHeight: 1.5,
+    },
+    caption: {
       fontSize: '12px',
+      fontWeight: 400,
+      color: colors.muted,
+      lineHeight: 1.4,
     },
     button: {
-      textTransform: 'none',
+      ...type.button,
     },
   },
 
-  // 3. Components: 混合樣式
+  shape: {
+    borderRadius: radii.md,
+  },
+
   components: {
-    // [新增] 這會確保整個網頁背景色變成他們的淺灰色 (#f8f8f8)
     MuiCssBaseline: {
       styleOverrides: {
+        ':root': cssVariables,
         body: {
-          backgroundColor: '#f8f8f8',
+          backgroundColor: colors.wash,
+          color: colors.ink,
         },
       },
     },
     MuiTypography: {
       styleOverrides: {
         root: {
-          letterSpacing: '0.02rem', // [保留] 你的設定
+          letterSpacing: '0.02rem',
+        },
+      },
+    },
+    MuiButton: {
+      defaultProps: {
+        disableElevation: true,
+      },
+      styleOverrides: {
+        root: {
+          textTransform: 'none',
+          fontWeight: 800,
+          borderRadius: `${radii.btn}px`,
+        },
+        contained: {
+          color: colors.white,
+          backgroundColor: colors.leaf,
+          boxShadow: `0 6px 0 ${colors.leafDark}`,
+          paddingLeft: 24,
+          paddingRight: 24,
+          paddingTop: 8,
+          paddingBottom: 8,
+          borderRadius: `${radii.btn}px`,
+          '&:hover': {
+            backgroundColor: colors.leafHover,
+            boxShadow: `0 6px 0 ${colors.leafDark}`,
+          },
+          '&:active': {
+            transform: 'translateY(2px)',
+            boxShadow: `0 2px 0 ${colors.leafDark}`,
+          },
+          '&.Mui-disabled': {
+            backgroundColor: colors.line,
+            color: colors.muted,
+            boxShadow: 'none',
+          },
+        },
+        containedPrimary: {
+          backgroundColor: colors.leaf,
+          '&:hover': {
+            backgroundColor: colors.leafHover,
+          },
+        },
+        outlined: {
+          color: colors.ink,
+          borderWidth: 2,
+          borderColor: colors.sand,
+          backgroundColor: 'transparent',
+          paddingLeft: 20,
+          paddingRight: 20,
+          paddingTop: 7,
+          paddingBottom: 7,
+          borderRadius: `${radii.btn}px`,
+          '&:hover': {
+            borderWidth: 2,
+            borderColor: colors.leaf,
+            backgroundColor: colors.sageSoft,
+          },
+          '&.Mui-disabled': {
+            borderColor: colors.line,
+            color: colors.muted,
+          },
+        },
+        outlinedPrimary: {
+          color: colors.ink,
+          borderColor: colors.sand,
+          '&:hover': {
+            borderColor: colors.leaf,
+            backgroundColor: colors.sageSoft,
+          },
+        },
+        text: {
+          color: colors.ink,
+          fontWeight: 700,
+          borderRadius: 0,
+          '&:hover': {
+            backgroundColor: 'transparent',
+            color: colors.leaf,
+          },
         },
       },
     },
@@ -94,7 +225,7 @@ const theme = createTheme({
       styleOverrides: {
         root: {
           margin: '0px',
-          padding: '0px', // [保留] 你的設定
+          padding: '0px',
         },
       },
     },
@@ -102,7 +233,7 @@ const theme = createTheme({
       styleOverrides: {
         root: {
           margin: '0px',
-          padding: '5px', // [保留] 你的設定
+          padding: '5px',
           '&:last-child': {
             paddingBottom: 0,
           },
@@ -110,32 +241,100 @@ const theme = createTheme({
         },
       },
     },
-    // [重點] Card 樣式融合：保留你的 Layout (Padding)，改用他們的 Visual (Shadow/Border)
     MuiCard: {
       defaultProps: {
-        elevation: 0, // [保留]
+        elevation: 0,
       },
       styleOverrides: {
         root: {
-          // [修改] 為了像 Tailwind，改用 Shadow 模擬邊框，而不是實體 border
-          // 原本: border: '1px solid #ccc',
-          border: 'none',
-          boxShadow: '0 0 0 1px #f3f4f6, 0 8px 16px rgba(0,0,0,0.08)', // 對方的樣式
-
-          // [修改] 對方的圓角比較大 (1rem = 16px)，建議改過來，視覺比較統一
-          // 原本: borderRadius: '10px',
-          borderRadius: '16px',
-
-          // [保留] 你的 Padding 設定
+          border: `1px solid ${colors.line}`,
+          boxShadow: 'none',
+          borderRadius: `${radii.lg}px`,
+          backgroundColor: colors.paper,
           padding: '15px',
           margin: '0px',
+        },
+      },
+    },
+    MuiChip: {
+      styleOverrides: {
+        root: {
+          fontWeight: 700,
+          borderRadius: `${radii.sm}px`,
+        },
+        outlined: {
+          borderColor: colors.line,
+        },
+      },
+    },
+    MuiAppBar: {
+      styleOverrides: {
+        root: {
+          backgroundColor: colors.paper,
+          color: colors.ink,
+          borderBottom: `1px solid ${colors.line}`,
+          boxShadow: 'none',
         },
       },
     },
     MuiFormLabel: {
       styleOverrides: {
         asterisk: {
-          color: '#d32f2f', // [保留] 你的設定
+          color: colors.error,
+        },
+      },
+    },
+    MuiLinearProgress: {
+      styleOverrides: {
+        root: {
+          backgroundColor: colors.wash,
+          borderRadius: `${radii.sm}px`,
+        },
+        bar: {
+          backgroundColor: colors.leaf,
+          borderRadius: `${radii.sm}px`,
+        },
+      },
+    },
+    MuiPaper: {
+      styleOverrides: {
+        rounded: {
+          borderRadius: `${radii.lg}px`,
+        },
+      },
+    },
+    MuiAlert: {
+      styleOverrides: {
+        root: {
+          borderRadius: `${radii.md}px`,
+        },
+      },
+    },
+    MuiAccordion: {
+      defaultProps: {
+        disableGutters: true,
+        elevation: 0,
+      },
+      styleOverrides: {
+        root: {
+          ...accordionCardSx,
+        },
+      },
+    },
+    MuiCircularProgress: {
+      styleOverrides: {
+        root: {
+          color: colors.leaf,
+        },
+      },
+    },
+    MuiCheckbox: {
+      styleOverrides: {
+        root: {
+          color: colors.muted,
+          '&.Mui-checked': {
+            color: colors.leaf,
+          },
         },
       },
     },

@@ -25,12 +25,13 @@ import AssessmentIcon from '@mui/icons-material/Assessment'
 import { apiGet, apiPost } from '../lib/api'
 import KeyboardVoiceOutlinedIcon from '@mui/icons-material/KeyboardVoiceOutlined'
 
+import { radii, accordionCardSx, type } from '../theme/tokens'
 // 定義共用的樣式變數，方便統一高度
 const commonCardStyle = {
   height: '65vh', // 設定固定高度 (或是用 px, e.g., '600px')
   display: 'flex',
   flexDirection: 'column',
-  borderRadius: 3,
+  borderRadius: `${radii.lg}px`,
 }
 
 const scrollableContentStyle = {
@@ -87,16 +88,12 @@ export default function Conversations() {
       {/* 標題區 */}
       <Grid container spacing={3} alignItems='stretch'>
         <Grid item size={{ xs: 12 }}>
-          <Card>
-            <Box sx={{ display: 'flex', alignItems: 'center', mb: 3, gap: 1 }}>
-              <Typography variant='h5' sx={{ fontWeight: 700 }}>
+          <Card variant='outlined' sx={{ borderRadius: `${radii.lg}px`, p: 2 }}>
+            <Box sx={{ display: 'flex', alignItems: 'baseline', mb: 3, gap: 1 }}>
+              <Typography sx={type.sectionTitle}>
                 總覽與評語
               </Typography>
-              <Typography
-                variant='body2'
-                color='text.secondary'
-                sx={{ mt: 0.5 }}
-              >
+              <Typography sx={type.subtitle}>
                 (hfUserId: {hfUserId})
               </Typography>
             </Box>
@@ -115,14 +112,10 @@ export default function Conversations() {
                   <AutoAwesomeIcon
                     sx={{ fontSize: 40, color: 'primary.main', opacity: 0.8 }}
                   />
-                  <Typography variant='h6' sx={{ fontWeight: 600 }}>
+                  <Typography sx={type.sectionTitle}>
                     AI 語法健檢報告
                   </Typography>
-                  <Typography
-                    variant='body2'
-                    color='text.secondary'
-                    sx={{ textAlign: 'center' }}
-                  >
+                  <Typography sx={{ ...type.subtitle, textAlign: 'center' }}>
                     點擊下方按鈕，讓 AI 分析您整體的對話並找出改進點。
                   </Typography>
                 </>
@@ -144,13 +137,10 @@ export default function Conversations() {
                       bgcolor: '#f5f9ff',
                       border: '1px solid #dbe7ff',
                       p: 3,
-                      borderRadius: 3,
+                      borderRadius: `${radii.lg}px`,
                     }}
                   >
-                    <Typography
-                      variant='subtitle1'
-                      sx={{ fontWeight: 700, mb: 1 }}
-                    >
+                    <Typography sx={{ ...type.subsection, mb: 1 }}>
                       整體觀察
                     </Typography>
                     <Typography
@@ -166,13 +156,10 @@ export default function Conversations() {
                       bgcolor: '#ffffff',
                       border: '1px solid #eee',
                       p: 3,
-                      borderRadius: 3,
+                      borderRadius: `${radii.lg}px`,
                     }}
                   >
-                    <Typography
-                      variant='subtitle1'
-                      sx={{ fontWeight: 700, mb: 2 }}
-                    >
+                    <Typography sx={{ ...type.subsection, mb: 2 }}>
                       可執行建議
                     </Typography>
 
@@ -222,13 +209,10 @@ export default function Conversations() {
                       bgcolor: '#fffaf2',
                       border: '1px solid #f4dfb5',
                       p: 3,
-                      borderRadius: 3,
+                      borderRadius: `${radii.lg}px`,
                     }}
                   >
-                    <Typography
-                      variant='subtitle1'
-                      sx={{ fontWeight: 700, mb: 2 }}
-                    >
+                    <Typography sx={{ ...type.subsection, mb: 2 }}>
                       本週 3 天練習計畫
                     </Typography>
 
@@ -316,7 +300,7 @@ export default function Conversations() {
                           setAiLoading(false)
                         }
                       }}
-                      sx={{ borderRadius: 20, px: 3 }}
+                      sx={{ borderRadius: 2, px: 3 }}
                     >
                       {aiLoading ? '分析中...' : '重新分析'}
                     </Button>
@@ -328,7 +312,7 @@ export default function Conversations() {
                 <Button
                   variant='contained'
                   size='large'
-                  sx={{ color: '#fff', borderRadius: 20, px: 4, mt: 1 }}
+                  sx={{ color: '#fff', borderRadius: 2, px: 4, mt: 1 }}
                   startIcon={aiLoading ? null : <AutoAwesomeIcon />}
                   disabled={aiLoading}
                   onClick={async () => {
@@ -380,12 +364,17 @@ export default function Conversations() {
                 alignItems: 'center',
               }}
             >
-              <Typography variant='h5' sx={{ fontWeight: 700 }}>
+              <Typography sx={type.sectionTitle}>
                 聊天紀錄
               </Typography>
               <Typography
-                variant='caption'
-                sx={{ ml: 1, bgcolor: '#eee', px: 1, borderRadius: 1 }}
+                sx={{
+                  ...type.caption,
+                  ml: 1,
+                  bgcolor: '#eee',
+                  px: 1,
+                  borderRadius: 1,
+                }}
               >
                 共 {list?.total || 0} 筆
               </Typography>
@@ -455,7 +444,7 @@ export default function Conversations() {
           <Card variant='outlined' sx={commonCardStyle}>
             {/* 標題區 (使用 CardContent 的 padding 或是自己切 Box 都可以，這裡為了對齊左邊，建議自己切) */}
             <Box sx={{ p: 2, borderBottom: '1px solid #eee' }}>
-              <Typography variant='h5' sx={{ fontWeight: 700 }}>
+              <Typography sx={type.sectionTitle}>
                 常用情境對話 Top 5
               </Typography>
             </Box>
@@ -497,17 +486,11 @@ export default function Conversations() {
 
                         {/* 名稱與數據 */}
                         <Box>
-                          <Typography
-                            variant='subtitle2'
-                            sx={{ fontWeight: 700 }}
-                          >
+                          <Typography sx={type.subsection}>
                             {assistant.name}
                           </Typography>
                           <Stack direction='row' spacing={2}>
-                            <Typography
-                              variant='caption'
-                              color='text.secondary'
-                            >
+                            <Typography sx={type.caption}>
                               💬 {assistant.count} 次對話
                             </Typography>
                           </Stack>
@@ -560,11 +543,10 @@ function ConversationItem({ item }) {
       disableGutters
       elevation={0}
       sx={{
-        border: '1px solid #e0e0e0',
-        borderRadius: '12px !important',
-        '&:before': { display: 'none' },
+        ...accordionCardSx,
+        border: '1px solid',
+        borderColor: 'divider',
         mb: 2,
-        overflow: 'hidden',
       }}
     >
       <AccordionSummary
@@ -593,10 +575,10 @@ function ConversationItem({ item }) {
 
           {/* Assistant 名稱與日期 */}
           <Box>
-            <Typography variant='subtitle1' sx={{ fontWeight: 700 }}>
+            <Typography sx={type.subsection}>
               {item.assistantName}
             </Typography>
-            <Typography variant='caption' color='text.secondary'>
+            <Typography sx={type.caption}>
               {item.updatedAt
                 ? new Date(item.updatedAt).toLocaleDateString()
                 : ''}
@@ -642,9 +624,9 @@ function ConversationItem({ item }) {
                     sx={{
                       maxWidth: '85%',
                       p: 2,
-                      borderRadius: 3,
+                      borderRadius: `${radii.lg}px`,
                       // User: 藍底白字; Assistant: 白底黑字(或淺灰)
-                      bgcolor: isUser ? '#62c2b6' : '#ffffff',
+                      bgcolor: isUser ? 'primary.main' : 'background.paper',
                       color: isUser ? '#fff' : '#000',
                       border: isUser ? 'none' : '1px solid #e0e0e0',
                       // 讓氣泡尖角對應發話者位置

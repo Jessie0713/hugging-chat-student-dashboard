@@ -1,4 +1,6 @@
 /** 後端 CEFR levelKey → 前端顯示大階（rubric 仍用 CEFR，僅 UI 對照） */
+import { colors } from '../theme/tokens'
+
 const CEFR_TO_TIER = {
   PreA1: '入門',
   A1: '基礎',
@@ -12,11 +14,12 @@ const CEFR_TO_TIER = {
 
 export const TIER_ORDER = ['入門', '基礎', '進階', '高階']
 
+/** 等級分佈等：色相拉開方便辨識（沙／天空藍調／葉綠／琥珀） */
 export const TIER_COLORS = {
-  入門: '#e0f2f1',
-  基礎: '#80cbc4',
-  進階: '#26a69a',
-  高階: '#00796b',
+  入門: '#d6c4a8',
+  基礎: '#6a9bb0',
+  進階: '#6f8f5e',
+  高階: '#b07a45',
 }
 
 const VALID_TIERS = new Set(TIER_ORDER)
@@ -45,10 +48,10 @@ export function formatNextLevelLabel(currentKey, nextKey) {
   return nextTier
 }
 
-/** 符合 / 不符合共用色（圓餅圖、折線圖、Chip 一致） */
+/** 符合 / 不符合共用色（圓餅圖、折線圖、Chip 一致）— 主色系 */
 export const FIT_PIE_COLORS = {
-  符合等級: '#4db6ac',
-  不符合等級: '#ffb74d',
+  符合等級: colors.leaf,
+  不符合等級: colors.amber,
 }
 
 export const FIT_MATCH_COLOR = FIT_PIE_COLORS['符合等級']

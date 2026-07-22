@@ -33,6 +33,8 @@ import {
   TIER_ORDER,
 } from '../lib/levelDisplay'
 
+import { accordionCardSx, radii, type } from '../theme/tokens'
+
 function formatShortDate(value) {
   if (!value) return ''
   const d = new Date(value)
@@ -92,7 +94,7 @@ const filterLabelSx = {
 
 const filterPanelSx = {
   bgcolor: 'grey.50',
-  borderRadius: 2,
+  borderRadius: `${radii.btn}px`,
   border: '1px solid',
   borderColor: 'divider',
   px: 1.5,
@@ -333,7 +335,7 @@ export default function MyPracticePanel({
   )
 
   return (
-    <Card variant='outlined' sx={{ borderRadius: 3 }}>
+    <Card variant='outlined' sx={{ borderRadius: `${radii.lg}px` }}>
       <CardContent>
         <Stack
           direction={{ xs: 'column', md: 'row' }}
@@ -343,10 +345,10 @@ export default function MyPracticePanel({
           sx={{ mb: 1 }}
         >
           <Box sx={{ flex: 1, minWidth: 0 }}>
-            <Typography variant='h6' sx={{ fontWeight: 900 }}>
+            <Typography sx={type.sectionTitle}>
               我的聊天練習
             </Typography>
-            <Typography variant='body2' sx={{ opacity: 0.7, mt: 0.25 }}>
+            <Typography sx={{ ...type.subtitle, mt: 0.25 }}>
               查看每次練習是否符合所選等級
             </Typography>
           </Box>
@@ -393,11 +395,9 @@ export default function MyPracticePanel({
                   disableGutters
                   elevation={0}
                   sx={{
-                    borderRadius: 2,
-                    overflow: 'hidden',
+                    ...accordionCardSx,
                     border: '1px solid',
                     borderColor: 'divider',
-                    '&:before': { display: 'none' },
                   }}
                 >
                   <AccordionSummary
@@ -455,7 +455,7 @@ export default function MyPracticePanel({
                       <Box sx={{ mb: 1.5 }}>
                         <Typography
                           variant='subtitle2'
-                          sx={{ fontWeight: 900, mb: 0.25 }}
+                          sx={{ ...type.subsection, mb: 0.25 }}
                         >
                           本次聊天進步
                         </Typography>
@@ -479,7 +479,7 @@ export default function MyPracticePanel({
                       <>
                         <Typography
                           variant='subtitle2'
-                          sx={{ fontWeight: 900, mb: 0.5 }}
+                          sx={{ ...type.subsection, mb: 0.5 }}
                         >
                           需要加強
                         </Typography>

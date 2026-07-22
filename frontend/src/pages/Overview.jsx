@@ -54,8 +54,69 @@ import {
   groupCefrByTier,
   TIER_COLORS,
 } from '../lib/levelDisplay'
+import { radii, accordionCardSx, type } from '../theme/tokens'
 
-/** ---------- helpers ---------- */
+/** 折線圖線寬（圖例與曲線必須相同） */
+const CHART_LINE_WIDTH = 3
+
+/** @param {import('@mui/material').Theme} theme */
+function getChartLineSx(theme) {
+  const lineColor = theme.palette.primary.main
+  return {
+    width: '100%',
+    maxWidth: '100%',
+    [`& .MuiLineElement-root`]: {
+      stroke: `${lineColor} !important`,
+      strokeWidth: CHART_LINE_WIDTH,
+      strokeLinecap: 'round',
+      strokeLinejoin: 'round',
+    },
+    // 實心小圓：略小於線寬，減少蓋住線段
+    [`& .MuiMarkElement-root`]: {
+      fill: `${lineColor} !important`,
+      stroke: 'none !important',
+      strokeWidth: '0 !important',
+      r: 2.75,
+    },
+    // 避免繪圖區裁切線條上緣（頂部水平線會看起來變細）
+    [`& .MuiChartsSurface-root, & svg`]: {
+      overflow: 'visible',
+    },
+  }
+}
+
+function ChartSeriesLegend({ label, color }) {
+  return (
+    <Stack
+      direction='row'
+      spacing={0.75}
+      alignItems='center'
+      justifyContent='center'
+      sx={{ width: '100%', mb: 0.5 }}
+    >
+      <Box
+        component='span'
+        sx={{
+          width: 18,
+          height: 0,
+          borderTop: `${CHART_LINE_WIDTH}px solid`,
+          borderColor: color,
+          flexShrink: 0,
+        }}
+      />
+      <Typography
+        component='span'
+        sx={{
+          ...type.sectionTitle,
+          fontSize: 14,
+          lineHeight: 1.2,
+        }}
+      >
+        {label}
+      </Typography>
+    </Stack>
+  )
+}
 const CEFR_ORDER = ['PreA1', 'A1', 'A2', 'B1', 'B2', 'C1', 'C2', 'C1C2']
 
 // 與後端 /api/cefr/trends/daily 的 tz（預設 Asia/Taipei）對齊
@@ -245,7 +306,7 @@ function safeNum(n, fallback = 0) {
 }
 
 const fixedPanelSx = {
-  borderRadius: 3,
+  borderRadius: `${radii.lg}px`,
   height: 360,
   display: 'flex',
   flexDirection: 'column',
@@ -254,7 +315,16 @@ const fixedPanelSx = {
 const fixedContentSx = {
   flex: 1,
   minHeight: 0,
+  overflow: 'hidden',
+  display: 'flex',
+  flexDirection: 'column',
+}
+
+/** 徽章列表等需要捲動的內容區 */
+const scrollableContentSx = {
+  ...fixedContentSx,
   overflowY: 'auto',
+  overflowX: 'hidden',
   pr: 0.5,
   '&::-webkit-scrollbar': {
     width: 8,
@@ -290,16 +360,22 @@ function InfoIcon({ title }) {
 
 function StatCard({ title, value, suffix = '', help }) {
   return (
-    <Card variant='outlined' sx={{ borderRadius: 3, height: '100%' }}>
+    <Card variant='outlined' sx={{ borderRadius: `${radii.lg}px`, height: '100%' }}>
       <CardContent>
         <Stack direction='row' alignItems='center' spacing={0.5}>
-          <Typography variant='body2' sx={{ opacity: 0.75 }}>
-            {title}
-          </Typography>
+          <Typography sx={type.sectionTitle}>{title}</Typography>
           {help ? <InfoIcon title={help} /> : null}
         </Stack>
 
-        <Typography variant='h5' sx={{ fontWeight: 900, mt: 0.5 }}>
+        <Typography
+          sx={{
+            fontWeight: 800,
+            fontSize: { xs: 16, sm: 17 },
+            color: 'text.primary',
+            lineHeight: 1.2,
+            mt: 0.5,
+          }}
+        >
           {value}
           {suffix}
         </Typography>
@@ -337,6 +413,7 @@ function CefrTrendChart({
 }) {
   const [points, setPoints] = useState(null)
   const [err, setErr] = useState('')
+  const theme = useTheme()
 
   useEffect(() => {
     if (!mongoUserId) return
@@ -496,6 +573,7 @@ function CefrTrendChart({
 
   return (
     <LineChart
+      skipAnimation
       xAxis={xAxis}
         yAxis={[
           {
@@ -510,9 +588,9 @@ function CefrTrendChart({
           data: ys,
           xAxisId: DEFAULT_X_AXIS_KEY,
           label: assistantName || (assistantId ? '單一情境' : '整體'),
-          color: '#54a9c0',
+          color: theme.palette.primary.main,
           showMark: true,
-          curve: 'monotoneX',
+          curve: 'linear',
           valueFormatter: (v, ctx) => {
             const idx = ctx?.dataIndex ?? 0
             const p = points[idx]
@@ -535,6 +613,7 @@ function CefrTrendChart({
       }}
       slots={{ tooltip: cefrTrendTooltipSlot }}
       slotProps={{ legend: { hidden: true } }}
+      sx={getChartLineSx(theme)}
     />
   )
 }
@@ -568,7 +647,7 @@ function CefrPieCard({ cefrGroups = [], loading }) {
   return (
     <Card variant='outlined' sx={fixedPanelSx}>
       <CardContent sx={fixedContentSx}>
-        <Typography variant='h6' sx={{ fontWeight: 900, mb: 1 }}>
+        <Typography sx={{ ...type.sectionTitle, mb: 1 }}>
           等級分佈
         </Typography>
         {loading ? (
@@ -576,7 +655,16 @@ function CefrPieCard({ cefrGroups = [], loading }) {
             <CircularProgress />
           </Box>
         ) : (
-          <Box sx={{ display: 'flex', justifyContent: 'center', height: 280 }}>
+          <Box
+            sx={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 2,
+              height: 280,
+              px: 1,
+            }}
+          >
             <PieChart
               series={[
                 {
@@ -589,9 +677,49 @@ function CefrPieCard({ cefrGroups = [], loading }) {
                 },
               ]}
               colors={colors}
-              slotProps={{ legend: { hidden: true } }}
+              width={200}
+              height={220}
+              slots={{ legend: () => null }}
               margin={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              sx={{
+                '& .MuiChartsLegend-root': { display: 'none' },
+              }}
             />
+            <Stack spacing={1.25} sx={{ minWidth: 80 }}>
+              {seriesData.map((item, i) => (
+                <Stack
+                  key={`legend-${item.id}-${item.label}`}
+                  direction='row'
+                  spacing={0.75}
+                  alignItems='center'
+                >
+                  <Box
+                    sx={{
+                      width: 12,
+                      height: 12,
+                      borderRadius: '50%',
+                      bgcolor: colors[i] || theme.palette.grey[400],
+                      flexShrink: 0,
+                      border: '1px solid',
+                      borderColor: 'rgba(74,69,63,0.15)',
+                    }}
+                  />
+                  <Typography
+                    variant='body2'
+                    sx={{ color: 'text.primary', fontWeight: 600 }}
+                  >
+                    {item.label}
+                    <Typography
+                      component='span'
+                      variant='caption'
+                      sx={{ color: 'text.secondary', ml: 0.5 }}
+                    >
+                      ({item.value})
+                    </Typography>
+                  </Typography>
+                </Stack>
+              ))}
+            </Stack>
           </Box>
         )}
       </CardContent>
@@ -603,8 +731,7 @@ function CefrColumn({ title, assistants = [], source, mongoUserId }) {
   return (
     <Box>
       <Typography
-        variant='subtitle1'
-        sx={{ fontWeight: 900, textAlign: 'center', mb: 1 }}
+        sx={{ ...type.subsection, textAlign: 'center', mb: 1 }}
       >
         {title}
       </Typography>
@@ -621,11 +748,9 @@ function CefrColumn({ title, assistants = [], source, mongoUserId }) {
                 disableGutters
                 elevation={0}
                 sx={{
-                  borderRadius: 2,
-                  overflow: 'hidden',
+                  ...accordionCardSx,
                   border: '1px solid',
                   borderColor: 'divider',
-                  '&:before': { display: 'none' },
                 }}
               >
                 <AccordionSummary
@@ -675,7 +800,7 @@ function CefrColumn({ title, assistants = [], source, mongoUserId }) {
                     <Box sx={{ mb: 1 }}>
                       <Typography
                         variant='subtitle2'
-                        sx={{ fontWeight: 900, mb: 0.25 }}
+                        sx={{ ...type.subsection, mb: 0.25 }}
                       >
                         等級趨勢
                       </Typography>
@@ -695,7 +820,7 @@ function CefrColumn({ title, assistants = [], source, mongoUserId }) {
                     <>
                       <Typography
                         variant='subtitle2'
-                        sx={{ fontWeight: 900, mb: 0.5 }}
+                        sx={{ ...type.subsection, mb: 0.5 }}
                       >
                         需要加強
                       </Typography>
@@ -767,7 +892,7 @@ function BadgeAccordionPanel({
 
   return (
     <Card variant='outlined' sx={fixedPanelSx}>
-      <CardContent sx={fixedContentSx}>
+      <CardContent sx={scrollableContentSx}>
         <Stack spacing={1.5}>
           <Stack
             direction='row'
@@ -777,10 +902,10 @@ function BadgeAccordionPanel({
             useFlexGap
           >
             <Box>
-              <Typography variant='h6' sx={{ fontWeight: 900 }}>
+              <Typography sx={type.sectionTitle}>
                 徽章總覽
               </Typography>
-              <Typography variant='body2' sx={{ opacity: 0.7 }}>
+              <Typography sx={type.subtitle}>
                 對齊口說成績標準 · 已獲得 {earnedCount} / {totalCount}
               </Typography>
               {showLegacyNote ? (
@@ -799,10 +924,15 @@ function BadgeAccordionPanel({
               exclusive
               onChange={(_, v) => v && setFilter(v)}
               sx={{
+                gap: 0.75,
+                '& .MuiToggleButtonGroup-grouped': {
+                  borderRadius: `${radii.btn}px !important`,
+                  border: '1px solid !important',
+                  borderColor: 'primary.main !important',
+                  marginLeft: '0 !important',
+                },
                 '& .MuiToggleButton-root': {
                   color: 'primary.main',
-                  border: '1px solid',
-                  borderColor: 'primary.main',
                   fontSize: '0.75rem',
                   fontWeight: 700,
                   py: 0.5,
@@ -810,8 +940,8 @@ function BadgeAccordionPanel({
                   '&:hover': { bgcolor: 'action.hover' },
                 },
                 '& .MuiToggleButton-root.Mui-selected': {
-                  bgcolor: 'primary.main', // 選中背景主色
-                  color: '#fff', // 選中文字白色
+                  bgcolor: 'primary.main',
+                  color: '#fff',
                   '&:hover': { bgcolor: 'primary.dark' },
                 },
               }}
@@ -849,12 +979,10 @@ function BadgeAccordionPanel({
                     disableGutters
                     elevation={0}
                     sx={{
-                      borderRadius: 2,
-                      overflow: 'hidden',
+                      ...accordionCardSx,
                       border: '1px solid',
                       borderColor: earned ? 'primary.main' : 'divider',
-                      bgcolor: earned ? 'primary.50' : 'grey.50',
-                      '&:before': { display: 'none' },
+                      bgcolor: earned ? 'primary.light' : 'grey.50',
                     }}
                   >
                     <AccordionSummary
@@ -896,7 +1024,7 @@ function BadgeAccordionPanel({
                           >
                             <Typography
                               variant='subtitle1'
-                              sx={{ fontWeight: 900 }}
+                              sx={{ fontWeight: 800, color: 'text.primary' }}
                             >
                               {badge.name}
                             </Typography>
@@ -965,12 +1093,13 @@ function BadgeAccordionPanel({
   )
 }
 
-// 整體 CEFR 趨勢圖卡片（含 Raw/Daily 切換、Assistant 篩選、日期範圍）
-function OverallCefrTrendCard({
+// 整體 CEFR 趨勢圖內容（含 Raw/Daily 切換、Assistant 篩選、日期範圍）
+function OverallCefrTrendContent({
   source,
   mongoUserId,
   assistantOptions = [],
   loading,
+  showHeader = true,
 }) {
   const [mode, setMode] = useState('daily')
   const [assistantId, setAssistantId] = useState('')
@@ -993,9 +1122,117 @@ function OverallCefrTrendCard({
     return found?.assistantName || ''
   }, [assistantId, assistantOptions])
 
+  const modeToggle = (
+    <ToggleButtonGroup
+      size='small'
+      value={mode}
+      exclusive
+      onChange={(_, v) => v && setMode(v)}
+      sx={{
+        gap: 0.75,
+        '& .MuiToggleButtonGroup-grouped': {
+          borderRadius: `${radii.btn}px !important`,
+          border: '1px solid !important',
+          borderColor: 'primary.main !important',
+          marginLeft: '0 !important',
+        },
+        '& .MuiToggleButton-root': {
+          color: 'primary.main',
+          fontSize: '0.75rem',
+          fontWeight: 700,
+          py: 0.5,
+          px: 1.5,
+        },
+        '& .MuiToggleButton-root.Mui-selected': {
+          bgcolor: 'primary.main',
+          color: '#fff',
+          '&:hover': { bgcolor: 'primary.dark' },
+        },
+      }}
+    >
+      <ToggleButton value='daily'>Daily</ToggleButton>
+      <ToggleButton value='raw'>Raw</ToggleButton>
+    </ToggleButtonGroup>
+  )
+
+  const otherFilters = (
+    <Stack
+      direction='row'
+      spacing={1}
+      alignItems='center'
+      useFlexGap
+      flexWrap='wrap'
+    >
+      <TextField
+        select
+        size='small'
+        id='assistant'
+        name='assistant'
+        label='Assistant'
+        value={assistantId}
+        onChange={(e) => setAssistantId(e.target.value)}
+        sx={{ minWidth: 180 }}
+        InputLabelProps={{ shrink: true }}
+        SelectProps={{
+          displayEmpty: true,
+          inputProps: { id: 'assistant', name: 'assistant' },
+          renderValue: (v) => {
+            if (!v) return '整體'
+            return selectedAssistantName || '單一情境'
+          },
+        }}
+      >
+        <MenuItem value=''>整體</MenuItem>
+        {assistantOptions.map((opt) => (
+          <MenuItem key={opt.assistantId} value={opt.assistantId}>
+            {opt.assistantName || opt.assistantId}
+          </MenuItem>
+        ))}
+      </TextField>
+
+      <TextField
+        size='small'
+        id='startDate'
+        name='startDate'
+        label='起'
+        type='date'
+        value={start}
+        onChange={(e) => setStart(e.target.value)}
+        InputLabelProps={{ shrink: true }}
+        sx={{ minWidth: 140 }}
+      />
+      <TextField
+        size='small'
+        id='endDate'
+        name='endDate'
+        label='迄'
+        type='date'
+        value={end}
+        onChange={(e) => setEnd(e.target.value)}
+        InputLabelProps={{ shrink: true }}
+        sx={{ minWidth: 140 }}
+      />
+    </Stack>
+  )
+
+  const filters = (
+    <Stack
+      direction='row'
+      spacing={1}
+      alignItems='center'
+      justifyContent='space-between'
+      useFlexGap
+      flexWrap='wrap'
+      sx={{ width: '100%' }}
+    >
+      {modeToggle}
+      {otherFilters}
+    </Stack>
+  )
+
   return (
-    <Card variant='outlined' sx={{ borderRadius: 3 }}>
-      <CardContent>
+    <Box>
+      {showHeader ? (
         <Stack
           direction={{ xs: 'column', md: 'row' }}
           alignItems={{ xs: 'flex-start', md: 'center' }}
@@ -1006,116 +1243,177 @@ function OverallCefrTrendCard({
           flexWrap='wrap'
         >
           <Box>
-            <Typography variant='h6' sx={{ fontWeight: 900 }}>
-              整體等級趨勢
-            </Typography>
-            <Typography variant='body2' sx={{ opacity: 0.7 }}>
+            <Typography sx={type.sectionTitle}>整體等級趨勢</Typography>
+            <Typography sx={type.subtitle}>
               依時間追蹤學生的等級變化
             </Typography>
           </Box>
+          {filters}
+        </Stack>
+      ) : (
+        <Box sx={{ mb: 1.5 }}>{filters}</Box>
+      )}
 
-          <Stack
-            direction='row'
-            spacing={1}
-            alignItems='center'
-            useFlexGap
-            flexWrap='wrap'
-          >
-            <ToggleButtonGroup
-              size='small'
-              value={mode}
-              exclusive
-              onChange={(_, v) => v && setMode(v)}
-              sx={{
-                '& .MuiToggleButton-root': {
-                  color: 'primary.main',
-                  border: '1px solid',
-                  borderColor: 'primary.main',
-                  fontSize: '0.75rem',
-                  fontWeight: 700,
-                  py: 0.5,
-                  px: 1.5,
-                },
-                '& .MuiToggleButton-root.Mui-selected': {
-                  bgcolor: 'primary.main',
-                  color: '#fff',
-                  '&:hover': { bgcolor: 'primary.dark' },
-                },
-              }}
-            >
-              <ToggleButton value='daily'>Daily</ToggleButton>
-              <ToggleButton value='raw'>Raw</ToggleButton>
-            </ToggleButtonGroup>
+      {showHeader ? <Divider sx={{ mb: 1.5 }} /> : null}
 
-            <TextField
-              select
-              size='small'
-              id='assistant'
-              name='assistant'
-              label='Assistant'
-              value={assistantId}
-              onChange={(e) => setAssistantId(e.target.value)}
-              sx={{ minWidth: 180 }}
-              InputLabelProps={{ shrink: true }}
-              SelectProps={{
-                displayEmpty: true,
-                inputProps: { id: 'assistant', name: 'assistant' },
-                renderValue: (v) => {
-                  if (!v) return '整體'
-                  return selectedAssistantName || '單一情境'
-                },
-              }}
-            >
-              <MenuItem value=''>整體</MenuItem>
-              {assistantOptions.map((opt) => (
-                <MenuItem key={opt.assistantId} value={opt.assistantId}>
-                  {opt.assistantName || opt.assistantId}
-                </MenuItem>
-              ))}
-            </TextField>
+      {loading || !mongoUserId ? (
+        <Box sx={{ py: 6, display: 'grid', placeItems: 'center' }}>
+          <CircularProgress />
+        </Box>
+      ) : (
+        <CefrTrendChart
+          source={source}
+          mongoUserId={mongoUserId}
+          assistantId={assistantId || null}
+          assistantName={selectedAssistantName}
+          mode={mode}
+          start={startIso}
+          end={endIso}
+          height={300}
+          showAxisLabels
+        />
+      )}
+    </Box>
+  )
+}
 
-            <TextField
-              size='small'
-              id='startDate'
-              name='startDate'
-              label='起'
-              type='date'
-              value={start}
-              onChange={(e) => setStart(e.target.value)}
-              InputLabelProps={{ shrink: true }}
-              sx={{ minWidth: 140 }}
-            />
-            <TextField
-              size='small'
-              id='endDate'
-              name='endDate'
-              label='迄'
-              type='date'
-              value={end}
-              onChange={(e) => setEnd(e.target.value)}
-              InputLabelProps={{ shrink: true }}
-              sx={{ minWidth: 140 }}
-            />
+function CefrAdviceContent({
+  loading,
+  tierGroups = [],
+  source,
+  mongoUserId,
+}) {
+  if (loading) {
+    return (
+      <Box sx={{ py: 3, display: 'grid', placeItems: 'center' }}>
+        <CircularProgress size={22} />
+      </Box>
+    )
+  }
+
+  return (
+    <Grid container spacing={2}>
+      {tierGroups.map((g) => (
+        <Grid key={g.tier} item size={{ xs: 12, sm: 6, lg: 4 }}>
+          <CefrColumn
+            title={g.title}
+            assistants={g.assistants}
+            source={source}
+            mongoUserId={mongoUserId}
+          />
+        </Grid>
+      ))}
+      {!tierGroups.length && (
+        <Grid item xs={12}>
+          <Typography variant='body2' sx={{ opacity: 0.7 }}>
+            目前沒有建議資料
+          </Typography>
+        </Grid>
+      )}
+    </Grid>
+  )
+}
+
+/** 整體等級趨勢 / 詳細建議：同一卡片分頁切換 */
+function LevelInsightCard({
+  source,
+  mongoUserId,
+  assistantOptions = [],
+  loading,
+  tierGroups = [],
+  showTrend = true,
+  showAdvice = true,
+}) {
+  const tabs = useMemo(() => {
+    const list = []
+    if (showTrend) list.push({ id: 'trend', label: '整體等級趨勢' })
+    if (showAdvice) list.push({ id: 'advice', label: '詳細建議' })
+    return list
+  }, [showTrend, showAdvice])
+
+  const [tab, setTab] = useState(tabs[0]?.id || 'trend')
+
+  useEffect(() => {
+    if (!tabs.length) return
+    if (!tabs.some((t) => t.id === tab)) setTab(tabs[0].id)
+  }, [tabs, tab])
+
+  if (!tabs.length) return null
+
+  const subtitle =
+    tab === 'advice'
+      ? '根據各情境表現分析（含每個情境的等級趨勢圖）'
+      : '依時間追蹤學生的等級變化'
+
+  return (
+    <Card variant='outlined' sx={{ borderRadius: `${radii.lg}px` }}>
+      <CardContent>
+        <Stack
+          direction={{ xs: 'column', sm: 'row' }}
+          alignItems={{ xs: 'flex-start', sm: 'center' }}
+          justifyContent='space-between'
+          spacing={1.25}
+          sx={{ mb: 1 }}
+          useFlexGap
+          flexWrap='wrap'
+        >
+          <Stack spacing={0.75}>
+            {tabs.length > 1 ? (
+              <Stack direction='row' spacing={0} alignItems='flex-end'>
+                {tabs.map((t) => {
+                  const selected = tab === t.id
+                  return (
+                    <Box
+                      key={t.id}
+                      component='button'
+                      type='button'
+                      onClick={() => setTab(t.id)}
+                      sx={{
+                        appearance: 'none',
+                        border: 0,
+                        background: 'transparent',
+                        cursor: 'pointer',
+                        px: 0.25,
+                        mr: 2.5,
+                        pb: 0.75,
+                        ...type.sectionTitle,
+                        color: selected ? 'text.primary' : 'text.secondary',
+                        borderBottom: '2.5px solid',
+                        borderColor: selected ? 'primary.main' : 'transparent',
+                        transition: 'color 0.15s, border-color 0.15s',
+                        '&:hover': {
+                          color: 'text.primary',
+                        },
+                      }}
+                    >
+                      {t.label}
+                    </Box>
+                  )
+                })}
+              </Stack>
+            ) : (
+              <Typography sx={type.sectionTitle}>{tabs[0].label}</Typography>
+            )}
+            <Typography sx={type.subtitle}>{subtitle}</Typography>
           </Stack>
         </Stack>
 
-        <Divider sx={{ mb: 1.5 }} />
+        <Divider sx={{ my: 1.5 }} />
 
-        {loading || !mongoUserId ? (
-          <Box sx={{ py: 6, display: 'grid', placeItems: 'center' }}>
-            <CircularProgress />
-          </Box>
-        ) : (
-          <CefrTrendChart
+        {tab === 'trend' ? (
+          <OverallCefrTrendContent
             source={source}
             mongoUserId={mongoUserId}
-            assistantId={assistantId || null}
-            assistantName={selectedAssistantName}
-            mode={mode}
-            start={startIso}
-            end={endIso}
-            height={300}
-            showAxisLabels
+            assistantOptions={assistantOptions}
+            loading={loading}
+            showHeader={false}
+          />
+        ) : (
+          <CefrAdviceContent
+            loading={loading}
+            tierGroups={tierGroups}
+            source={source}
+            mongoUserId={mongoUserId}
           />
         )}
       </CardContent>
@@ -1131,6 +1429,7 @@ export default function Overview({
   fixedLevelErrorHint = false,
 }) {
   const { source, hfUserId } = useParams()
+  const theme = useTheme()
 
   const [data, setData] = useState(null)
   const [err, setErr] = useState('')
@@ -1174,8 +1473,30 @@ export default function Overview({
       avgTurns: { y: ts.avgTurns, label: '平均輪次' },
       avgDurationMin: { y: ts.avgDurationMin, label: '平均時長(分)' },
     }
-    return mapping[metric] || mapping.englishRatio
-  }, [ts, metric])
+    const raw = mapping[metric] || mapping.englishRatio
+    const src = Array.isArray(raw.y) ? raw.y : []
+    // 與 labels 對齊，避免曲線與圓點錯位
+    const y = labels.map((_, i) => {
+      const n = Number(src[i])
+      return Number.isFinite(n) ? n : null
+    })
+    const nums = y.filter((v) => v != null)
+    let yMin
+    let yMax
+    if (nums.length) {
+      const lo = Math.min(...nums)
+      const hi = Math.max(...nums)
+      const span = hi - lo
+      const pad = span > 0 ? span * 0.18 : Math.max(Math.abs(hi) * 0.08, 0.08)
+      yMin = lo - pad
+      yMax = hi + pad
+      // 比例類指標不要低於 0
+      if (metric === 'englishRatio' || metric === 'lexicalRichness') {
+        yMin = Math.max(0, yMin)
+      }
+    }
+    return { y, label: raw.label, yMin, yMax }
+  }, [ts, metric, labels])
 
   const cefrGroups = useMemo(() => {
     const arr = Array.isArray(data?.cefrGroups) ? data.cefrGroups : []
@@ -1279,8 +1600,8 @@ export default function Overview({
         <Grid item size={{ xs: 12, md: 4 }}>
           <Card variant='outlined' sx={fixedPanelSx}>
             <CardContent sx={fixedContentSx}>
-              <Stack spacing={1} sx={{ mb: 2 }}>
-                <Typography variant='h6' sx={{ fontWeight: 900 }}>
+              <Stack spacing={1} sx={{ mb: 1, flexShrink: 0 }}>
+                <Typography sx={type.sectionTitle}>
                   學習趨勢
                 </Typography>
 
@@ -1292,18 +1613,23 @@ export default function Overview({
                   onChange={(_, v) => v && setMetric(v)}
                   fullWidth
                   sx={{
+                    gap: 0.75,
+                    '& .MuiToggleButtonGroup-grouped': {
+                      borderRadius: `${radii.btn}px !important`,
+                      border: '1px solid !important',
+                      borderColor: 'primary.main !important',
+                      marginLeft: '0 !important',
+                    },
                     '& .MuiToggleButton-root': {
                       color: 'primary.main',
-                      border: '1px solid',
-                      borderColor: 'primary.main',
                       fontSize: '0.75rem',
                       fontWeight: 700,
                       py: 0.5,
                       '&:hover': { bgcolor: 'action.hover' },
                     },
                     '& .MuiToggleButton-root.Mui-selected': {
-                      bgcolor: 'primary.main', // 選中背景主色
-                      color: '#fff', // 選中文字白色
+                      bgcolor: 'primary.main',
+                      color: '#fff',
                       '&:hover': { bgcolor: 'primary.dark' },
                     },
                   }}
@@ -1331,23 +1657,67 @@ export default function Overview({
                 </ToggleButtonGroup>
               </Stack>
               {loading ? (
-                <Box sx={{ py: 6, display: 'grid', placeItems: 'center' }}>
+                <Box
+                  sx={{
+                    flex: 1,
+                    display: 'grid',
+                    placeItems: 'center',
+                    minHeight: 0,
+                  }}
+                >
                   <CircularProgress />
                 </Box>
               ) : (
-                <LineChart
-                  xAxis={[{ scaleType: 'point', data: labels }]}
-                  series={[
-                    {
-                      data: lineSeries.y || [],
-                      label: lineSeries.label,
-                      color: '#54a9c0',
-                    },
-                  ]}
-                  height={220}
-                  margin={{ left: 30, right: 30, top: 10, bottom: 30 }}
-                  slotProps={{ legend: { hidden: true } }}
-                />
+                <Box
+                  sx={{
+                    flex: 1,
+                    minHeight: 0,
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'stretch',
+                    justifyContent: 'center',
+                  }}
+                >
+                  <ChartSeriesLegend
+                    label={lineSeries.label}
+                    color={theme.palette.primary.main}
+                  />
+                  <Box
+                    sx={{
+                      width: '100%',
+                      ml: -1,
+                      mr: 0.5,
+                    }}
+                  >
+                    <LineChart
+                      skipAnimation
+                      xAxis={[{ scaleType: 'point', data: labels }]}
+                      yAxis={[
+                        {
+                          min: lineSeries.yMin,
+                          max: lineSeries.yMax,
+                          tickLabelStyle: { fontSize: 11 },
+                        },
+                      ]}
+                      series={[
+                        {
+                          data: lineSeries.y || [],
+                          label: lineSeries.label,
+                          color: theme.palette.primary.main,
+                          showMark: true,
+                          curve: 'linear',
+                          connectNulls: false,
+                        },
+                      ]}
+                      height={200}
+                      // 左窄右寬：補償 Y 軸刻度佔位，讓繪圖區視覺置中（避免偏右）
+                      margin={{ left: 28, right: 12, top: 16, bottom: 28 }}
+                      slots={{ legend: () => null }}
+                      slotProps={{ legend: { hidden: true } }}
+                      sx={getChartLineSx(theme)}
+                    />
+                  </Box>
+                </Box>
               )}
             </CardContent>
           </Card>
@@ -1390,65 +1760,18 @@ export default function Overview({
         </Grid>
       ) : null}
 
-      {showOverallCefrTrend ? (
-        <Grid container spacing={2} sx={{ mb: 2 }}>
+      {showOverallCefrTrend || showCefrAdvice ? (
+        <Grid container spacing={2}>
           <Grid item size={{ xs: 12 }}>
-            <OverallCefrTrendCard
+            <LevelInsightCard
               source={source}
               mongoUserId={mongoUserId}
               assistantOptions={assistantOptions}
               loading={loading}
+              tierGroups={tierGroups}
+              showTrend={showOverallCefrTrend}
+              showAdvice={showCefrAdvice}
             />
-          </Grid>
-        </Grid>
-      ) : null}
-
-      {showCefrAdvice ? (
-        <Grid container spacing={2}>
-          <Grid item size={{ xs: 12 }}>
-            <Card variant='outlined' sx={{ borderRadius: 3 }}>
-              <CardContent>
-                <Stack direction='row' alignItems='baseline' spacing={1}>
-                  <Typography variant='h6' sx={{ fontWeight: 900 }}>
-                    詳細建議
-                  </Typography>
-                  <Typography variant='body2' sx={{ opacity: 0.7 }}>
-                    根據各情境表現分析（含每個情境的等級趨勢圖）
-                  </Typography>
-                </Stack>
-                <Divider sx={{ my: 1.5 }} />
-
-                {loading ? (
-                  <Box sx={{ py: 3, display: 'grid', placeItems: 'center' }}>
-                    <CircularProgress size={22} />
-                  </Box>
-                ) : (
-                  <Grid container spacing={2}>
-                    {tierGroups.map((g) => (
-                      <Grid
-                        key={g.tier}
-                        item
-                        size={{ xs: 12, sm: 6, lg: 4 }}
-                      >
-                        <CefrColumn
-                          title={g.title}
-                          assistants={g.assistants}
-                          source={source}
-                          mongoUserId={mongoUserId}
-                        />
-                      </Grid>
-                    ))}
-                    {!tierGroups.length && (
-                      <Grid item xs={12}>
-                        <Typography variant='body2' sx={{ opacity: 0.7 }}>
-                          目前沒有建議資料
-                        </Typography>
-                      </Grid>
-                    )}
-                  </Grid>
-                )}
-              </CardContent>
-            </Card>
           </Grid>
         </Grid>
       ) : null}

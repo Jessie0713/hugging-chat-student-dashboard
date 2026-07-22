@@ -3,6 +3,8 @@ import React, { useMemo, useState } from 'react'
 import { Box, Card, CardContent, Paper, Stack, Typography } from '@mui/material'
 import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip } from 'recharts'
 
+import { radii } from '../theme/tokens'
+
 const DEFAULT_COLORS = [
   '#4F6FEA', // 藍
   '#F4C145', // 黃
@@ -75,7 +77,7 @@ export default function DonutUsageCard({
   return (
     <Card
       elevation={0}
-      sx={{ borderRadius: 4, boxShadow: '0 8px 24px rgba(0,0,0,0.08)' }}
+      sx={{ borderRadius: `${radii.lg}px`, boxShadow: '0 8px 24px rgba(0,0,0,0.08)' }}
     >
       <CardContent sx={{ p: 3 }}>
         <Typography variant='subtitle1' sx={{ fontWeight: 800, mb: 1 }}>
@@ -179,7 +181,7 @@ export default function DonutUsageCard({
                   sx={{
                     width: 10,
                     height: 10,
-                    borderRadius: '999px',
+                    borderRadius: '6px',
                     bgcolor: colors[idx % colors.length],
                   }}
                 />

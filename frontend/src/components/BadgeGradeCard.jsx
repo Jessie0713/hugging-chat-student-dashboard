@@ -8,6 +8,8 @@ import {
   Typography,
 } from '@mui/material'
 
+import { radii, type } from '../theme/tokens'
+
 export default function BadgeGradeCard({ gradeEstimate, loading }) {
   const score = gradeEstimate?.score
   const scoreLabel = gradeEstimate?.scoreLabel ?? '尚未達標'
@@ -16,12 +18,12 @@ export default function BadgeGradeCard({ gradeEstimate, loading }) {
   const levelMet = gradeEstimate?.levelRequirementMet
 
   return (
-    <Card variant='outlined' sx={{ borderRadius: 3, height: '100%' }}>
+    <Card variant='outlined' sx={{ borderRadius: `${radii.lg}px`, height: '100%' }}>
       <CardContent>
-        <Typography variant='h6' sx={{ fontWeight: 900, mb: 0.25 }}>
+        <Typography sx={{ ...type.sectionTitle, mb: 0.25 }}>
           口說成績預估
         </Typography>
-        <Typography variant='body2' sx={{ opacity: 0.7, mb: 1.5 }}>
+        <Typography sx={{ ...type.subtitle, mb: 1.5 }}>
           依有效練習主題數與進階達標計算（對齊成績表）
         </Typography>
 

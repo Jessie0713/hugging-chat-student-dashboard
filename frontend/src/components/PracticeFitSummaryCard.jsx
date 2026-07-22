@@ -11,8 +11,10 @@ import { PieChart } from '@mui/x-charts/PieChart'
 import { useTheme } from '@mui/material/styles'
 import { classifyPracticeFit, FIT_PIE_COLORS } from '../lib/levelDisplay'
 
+import { radii, type } from '../theme/tokens'
+
 const fixedPanelSx = {
-  borderRadius: 3,
+  borderRadius: `${radii.lg}px`,
   height: 360,
   display: 'flex',
   flexDirection: 'column',
@@ -67,17 +69,17 @@ export default function PracticeFitSummaryCard({
   return (
     <Card variant='outlined' sx={fixedPanelSx}>
       <CardContent sx={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
-        <Typography variant='h6' sx={{ fontWeight: 900, mb: 0.25 }}>
+        <Typography sx={{ ...type.sectionTitle, mb: 0.25 }}>
           練習適配概況
         </Typography>
-        <Typography variant='body2' sx={{ opacity: 0.7, mb: 0.5 }}>
+        <Typography sx={{ ...type.subtitle, mb: 0.5 }}>
           {loading
             ? '—'
             : practiceCount
               ? `最近 ${practiceCount} 間聊天室`
               : '尚無評估紀錄'}
         </Typography>
-        <Typography variant='caption' sx={{ opacity: 0.6, display: 'block', mb: 1 }}>
+        <Typography sx={{ ...type.caption, display: 'block', mb: 1 }}>
           練習與所選等級的符合情形
         </Typography>
 

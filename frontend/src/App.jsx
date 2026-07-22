@@ -5,6 +5,7 @@ import StudentLayout from './pages/StudentLayout'
 import OverviewPage from './pages/OverviewPage'
 import Conversations from './pages/Conversations'
 import Badges from './pages/Badges'
+import PracticeNextPage from './pages/PracticeNextPage'
 
 export default function App() {
   return (
@@ -15,6 +16,7 @@ export default function App() {
         <Route index element={<Navigate to='overview' replace />} />
         <Route path='overview' element={<OverviewPage />} />
         <Route path='conversations' element={<Conversations />} />
+        <Route path='practice-next' element={<PracticeNextPage />} />
         <Route path='badges' element={<Badges />} />
       </Route>
 

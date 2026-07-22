@@ -6,7 +6,8 @@ body,
 }
 
 body {
-  background: #fff;
+  background: var(--color-wash, #f4efe6);
+  color: var(--color-ink, #4a453f);
   margin: 0;
   padding: 0;
   letter-spacing: 0.02rem;
@@ -16,6 +17,7 @@ body {
 .app-container {
   max-width: 1440px;
   margin-inline: auto;
-  padding-inline: 16px; /* 可選：防貼邊 */
+  padding-inline: 16px;
   height: 100%;
 }
+

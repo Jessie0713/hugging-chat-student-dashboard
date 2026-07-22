@@ -490,6 +490,11 @@ async def profile(source: str, hfUserId: str):
 # Utils: assistantId -> name map
 # ----------------------------
 async def build_assistant_name_map(db, assistant_ids: list[Any]) -> dict[str, str]:
+    meta = await build_assistant_meta_map(db, assistant_ids)
+    return {aid: info.get("name") or "Unnamed" for aid, info in meta.items()}
+
+
+async def build_assistant_meta_map(db, assistant_ids: list[Any]) -> dict[str, dict]:
     obj_ids: list[ObjectId] = []
     for a in assistant_ids:
         try:
@@ -503,10 +508,17 @@ async def build_assistant_name_map(db, assistant_ids: list[Any]) -> dict[str, st
     if not obj_ids:
         return {}
 
-    m: dict[str, str] = {}
-    cursor = db["assistants"].find({"_id": {"$in": obj_ids}}, {"name": 1})
+    m: dict[str, dict] = {}
+    cursor = db["assistants"].find(
+        {"_id": {"$in": obj_ids}},
+        {"name": 1, "description": 1},
+    )
     async for doc in cursor:
-        m[str(doc["_id"])] = doc.get("name") or "Unnamed"
+        aid = str(doc["_id"])
+        m[aid] = {
+            "name": doc.get("name") or "Unnamed",
+            "description": (doc.get("description") or "").strip(),
+        }
     return m
 
 # ----------------------------
@@ -523,10 +535,14 @@ def _as_utc_datetime(value: Any) -> datetime | None:
 
 def build_recent_practice(
     convs: list[dict],
-    assistant_name_map: dict[str, str],
+    assistant_meta_map: dict[str, dict] | dict[str, str],
     limit: int = 15,
-) -> tuple[list[dict], dict[str, int]]:
-    """fixed_level：每個有 cefr 的 conversation 一筆，依 updatedAt 取最近 N 筆。"""
+    advanced_fit_goal: int = 6,
+) -> tuple[list[dict], dict[str, int], dict]:
+    """fixed_level：每個有 cefr 的 conversation 一筆，依 updatedAt 取最近 N 筆。
+
+    另統計「選定進階且符合（in_band）」的聊天室數，供自我調節進度（目標預設 6）。
+    """
     candidates: list[dict] = []
 
     for conv in convs:
@@ -541,11 +557,19 @@ def build_recent_practice(
         aid_str = str(aid) if aid is not None else ""
         title = (conv.get("title") or "").strip()
         updated_at = conv.get("updatedAt") or conv.get("createdAt")
+        meta = assistant_meta_map.get(aid_str)
+        if isinstance(meta, dict):
+            assistant_name = meta.get("name") or aid_str
+            assistant_description = meta.get("description") or ""
+        else:
+            assistant_name = meta or aid_str
+            assistant_description = ""
 
         candidates.append({
             "conversationId": str(conv["_id"]),
             "assistantId": aid_str,
-            "assistantName": assistant_name_map.get(aid_str, aid_str),
+            "assistantName": assistant_name,
+            "assistantDescription": assistant_description,
             "conversationTitle": title or None,
             "targetProductTier": cefr.get("targetProductTier"),
             "targetBandLow": cefr.get("targetBandLow"),
@@ -562,6 +586,31 @@ def build_recent_practice(
         })
 
     candidates.sort(key=lambda x: x["_sortTs"], reverse=True)
+
+    # 全部聊天室：選定「進階」且 fitStatus=in_band（嚴格「符合進階」）
+    advanced_room_ids: set[str] = set()
+    for item in candidates:
+        tier = str(item.get("targetProductTier") or "").strip()
+        status = (
+            str(item.get("fitStatus") or "")
+            .strip()
+            .lower()
+            .replace("-", "_")
+        )
+        if tier == "進階" and status == "in_band":
+            cid = item.get("conversationId") or item.get("assistantId")
+            if cid:
+                advanced_room_ids.add(str(cid))
+
+    count = len(advanced_room_ids)
+    advanced_progress = {
+        "tier": "進階",
+        "count": count,
+        "goal": advanced_fit_goal,
+        "met": count >= advanced_fit_goal,
+        "mode": "fixed",
+    }
+
     recent = candidates[:limit]
     for item in recent:
         item.pop("_sortTs", None)
@@ -577,21 +626,46 @@ def build_recent_practice(
         else:
             fit_summary["unmatched"] += 1
 
-    return recent, fit_summary
+    return recent, fit_summary, advanced_progress
+
+
+def build_rolling_advanced_progress(
+    agent_cefr: list[dict],
+    goal: int = 6,
+) -> dict:
+    """rolling：agentCefr 中等級已達進階／高階的聊天室（assistant）數。"""
+    advanced_ids: set[str] = set()
+    for entry in agent_cefr or []:
+        tier = _practice_tier_from_level_key(entry.get("levelKey"))
+        if tier not in ("進階", "高階"):
+            continue
+        aid = entry.get("assistantId")
+        if aid:
+            advanced_ids.add(str(aid))
+    count = len(advanced_ids)
+    return {
+        "tier": "進階",
+        "count": count,
+        "goal": goal,
+        "met": count >= goal,
+        "mode": "rolling",
+    }
 
 
 def build_cefr_groups_from_agent_cefr(
     agent_cefr: list[dict],
-    cefr_name_map: dict[str, str],
+    cefr_meta_map: dict[str, dict],
 ) -> list[dict]:
     groups: dict[str, list[dict]] = defaultdict(list)
     for x in agent_cefr:
         level = (x.get("levelKey") or "Unknown").strip()
         aid = x.get("assistantId")
         aid_str = str(aid) if aid is not None else ""
+        meta = cefr_meta_map.get(aid_str, {})
         groups[level].append({
             "assistantId": aid_str,
-            "assistantName": cefr_name_map.get(aid_str, aid_str),
+            "assistantName": meta.get("name") or aid_str,
+            "assistantDescription": meta.get("description") or "",
             "levelKey": x.get("levelKey"),
             "nextLevelKey": x.get("nextLevelKey"),
             "confidence": x.get("confidence"),
@@ -704,7 +778,10 @@ async def student_overview(source: str, hfUserId: str):
             assistant_counter[str(a)] += 1
             assistant_ids_for_lookup.append(a)
 
-    assistant_name_map = await build_assistant_name_map(db, assistant_ids_for_lookup)
+    assistant_meta_map = await build_assistant_meta_map(db, assistant_ids_for_lookup)
+    assistant_name_map = {
+        aid: (info.get("name") or aid) for aid, info in assistant_meta_map.items()
+    }
 
     assistant_usage = []
     for aid, cnt in assistant_counter.most_common(8):
@@ -798,19 +875,21 @@ async def student_overview(source: str, hfUserId: str):
     is_fixed_level = normalize_source(source) == "fixed_level"
     recent_practice: list[dict] = []
     fit_summary: dict[str, int] = {}
+    advanced_fit_progress: dict = {}
     cefr_groups: list[dict] = []
 
     if is_fixed_level:
-        recent_practice, fit_summary = build_recent_practice(
-            convs, assistant_name_map
+        recent_practice, fit_summary, advanced_fit_progress = build_recent_practice(
+            convs, assistant_meta_map
         )
     else:
         agent_cefr = user.get("agentCefr") or []
         cefr_assistant_ids = [
             x.get("assistantId") for x in agent_cefr if x.get("assistantId")
         ]
-        cefr_name_map = await build_assistant_name_map(db, cefr_assistant_ids)
-        cefr_groups = build_cefr_groups_from_agent_cefr(agent_cefr, cefr_name_map)
+        cefr_meta_map = await build_assistant_meta_map(db, cefr_assistant_ids)
+        cefr_groups = build_cefr_groups_from_agent_cefr(agent_cefr, cefr_meta_map)
+        advanced_fit_progress = build_rolling_advanced_progress(agent_cefr)
     # ---- badge data
     badge_payload = build_badge_payload(user.get("badge") or {}, source)
 
@@ -834,5 +913,6 @@ async def student_overview(source: str, hfUserId: str):
         "cefrGroups": cefr_groups,
         "recentPractice": recent_practice,
         "fitSummary": fit_summary,
+        "advancedFitProgress": advanced_fit_progress,
     }
 
