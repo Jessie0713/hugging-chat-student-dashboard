@@ -43,6 +43,7 @@ import {
   buttonPrimarySx,
   buttonSecondarySx,
   type,
+  dinoShadow,
 } from '../theme/tokens'
 
 const bob = keyframes`
@@ -300,6 +301,7 @@ function SectionBlock({
                   width: 78,
                   height: 78,
                   objectFit: 'contain',
+                  filter: dinoShadow,
                   animation: dinoAnim,
                   transition: 'transform 0.25s ease',
                   '&:hover': { animation: `${wiggle} 0.55s ease` },
@@ -1019,7 +1021,9 @@ export default function PracticeNextPage() {
                           height: { xs: 82, sm: 94 },
                           objectFit: 'contain',
                           display: 'block',
-                          filter: locked ? 'grayscale(0.5)' : 'none',
+                          filter: locked
+                            ? `grayscale(0.5) ${dinoShadow}`
+                            : dinoShadow,
                           animation:
                             wiggleId === dino.id
                               ? `${hop} 0.55s ease`
@@ -1093,6 +1097,7 @@ export default function PracticeNextPage() {
                   width: 48 + i * 4,
                   height: 48 + i * 4,
                   objectFit: 'contain',
+                  filter: dinoShadow,
                   animation: `${bob} 1.2s ease-in-out infinite`,
                   animationDelay: `${i * 0.18}s`,
                 }}

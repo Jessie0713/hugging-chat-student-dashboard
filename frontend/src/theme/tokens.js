@@ -130,6 +130,10 @@ export const type = {
   },
 }
 
+/** 恐龍插畫統一陰影（透明 PNG 用 drop-shadow） */
+export const dinoShadow =
+  'drop-shadow(0 3px 0 rgba(74,69,63,0.14)) drop-shadow(0 10px 16px rgba(74,69,63,0.32))'
+
 /** Primary：綠底白字、立體按壓 */
 export const buttonPrimarySx = {
   ...type.button,

@@ -10,7 +10,7 @@ import {
   Button,
 } from '@mui/material'
 import { apiGet } from '../lib/api'
-import { colors, radii, type } from '../theme/tokens'
+import { colors, radii, type, dinoShadow } from '../theme/tokens'
 
 /**
  * 導覽貼紙：與總覽膠囊／一級按鈕刻意不同
@@ -269,6 +269,7 @@ export default function StudentHeader() {
                   width: '100%',
                   height: '100%',
                   objectFit: 'contain',
+                  filter: dinoShadow,
                   animation: 'headerDinoRoar 3s ease-in-out infinite',
                 }}
               />
