@@ -2,6 +2,14 @@
 
 const FIXED_LEVEL_SOURCES = new Set(['fixed_level', 'huggingchat'])
 
+/** 解鎖氛圍恐龍／App bar 的獎章 id */
+export const BADGE_UNLOCK = {
+  flyer: 'flyer_observe',
+  armor: 'armor_ready',
+  rex: 'rex_ten',
+  kaiju: 'kaiju_six',
+}
+
 const LEGACY_BADGE_IDS = new Set([
   'streak_3',
   'streak_7',

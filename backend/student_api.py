@@ -982,7 +982,15 @@ async def student_overview(source: str, hfUserId: str):
             convs, assistant_meta_map
         )
     else:
-        agent_cefr = user.get("agentCefr") or []
+        # 只保留「目前仍有對話」的情境；agentCefr 會累積舊評級，刪對話後仍殘留
+        conv_assistant_ids = {
+            str(a) for a in assistant_ids_for_lookup if a is not None
+        }
+        agent_cefr = [
+            x
+            for x in (user.get("agentCefr") or [])
+            if str(x.get("assistantId") or "") in conv_assistant_ids
+        ]
         cefr_assistant_ids = [
             x.get("assistantId") for x in agent_cefr if x.get("assistantId")
         ]

@@ -26,18 +26,21 @@ import { apiGet, apiPost } from '../lib/api'
 import KeyboardVoiceOutlinedIcon from '@mui/icons-material/KeyboardVoiceOutlined'
 
 import { radii, accordionCardSx, type } from '../theme/tokens'
-// 定義共用的樣式變數，方便統一高度
+
+/** 手機依內容高度；平板／桌機與同列另一卡等高 */
 const commonCardStyle = {
-  height: '65vh', // 設定固定高度 (或是用 px, e.g., '600px')
+  borderRadius: `${radii.lg}px`,
+  width: '100%',
+  height: { xs: 'auto', md: '100%' },
   display: 'flex',
   flexDirection: 'column',
-  borderRadius: `${radii.lg}px`,
 }
 
-const scrollableContentStyle = {
-  flex: 1, // 佔滿 Card 扣除標題後的剩餘空間
-  overflowY: 'auto', // 內容超出時顯示捲軸
-  p: 2, // 內距
+const cardBodyStyle = {
+  p: 2,
+  flex: { md: 1 },
+  minHeight: { md: 0 },
+  overflowY: { md: 'auto' },
 }
 
 export default function Conversations() {
@@ -350,10 +353,12 @@ export default function Conversations() {
             </Box>
           </Card>
         </Grid>{' '}
-        {/* 確保 Grid item 本身高度拉伸對齊 */}
         {/* 左側：聊天記錄 (Accordions) */}
-        <Grid item size={{ xs: 7 }}>
-          {/* 修正: size={{ xs: 6 }} 寫法可能依版本不同，建議用標準 xs/md */}
+        <Grid
+          item
+          size={{ xs: 12, md: 7 }}
+          sx={{ display: 'flex', alignItems: 'stretch' }}
+        >
           <Card variant='outlined' sx={commonCardStyle}>
             {/* 標題區 (固定不動) */}
             <Box
@@ -362,6 +367,7 @@ export default function Conversations() {
                 borderBottom: '1px solid #eee',
                 display: 'flex',
                 alignItems: 'center',
+                flexShrink: 0,
               }}
             >
               <Typography sx={type.sectionTitle}>
@@ -380,8 +386,7 @@ export default function Conversations() {
               </Typography>
             </Box>
 
-            {/* 列表內容區 (可捲動) */}
-            <Box sx={scrollableContentStyle}>
+            <Box sx={cardBodyStyle}>
               {loading ? (
                 <Stack spacing={2}>
                   <Skeleton variant='rounded' height={60} />
@@ -440,17 +445,25 @@ export default function Conversations() {
           </Card>
         </Grid>
         {/* 右側：排行榜 (Top 5 Assistants) */}
-        <Grid item size={{ xs: 5 }}>
+        <Grid
+          item
+          size={{ xs: 12, md: 5 }}
+          sx={{ display: 'flex', alignItems: 'stretch' }}
+        >
           <Card variant='outlined' sx={commonCardStyle}>
-            {/* 標題區 (使用 CardContent 的 padding 或是自己切 Box 都可以，這裡為了對齊左邊，建議自己切) */}
-            <Box sx={{ p: 2, borderBottom: '1px solid #eee' }}>
+            <Box
+              sx={{
+                p: 2,
+                borderBottom: '1px solid #eee',
+                flexShrink: 0,
+              }}
+            >
               <Typography sx={type.sectionTitle}>
                 常用情境對話 Top 5
               </Typography>
             </Box>
 
-            {/* 列表內容區 (可捲動) */}
-            <Box sx={scrollableContentStyle}>
+            <Box sx={cardBodyStyle}>
               {!overview ? (
                 <Skeleton variant='rectangular' height={200} />
               ) : (

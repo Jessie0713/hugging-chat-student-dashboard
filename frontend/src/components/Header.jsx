@@ -7,14 +7,41 @@ import {
   Toolbar,
   Typography,
   Button,
+  IconButton,
+  Drawer,
+  Stack,
+  Divider,
 } from '@mui/material'
+import MenuIcon from '@mui/icons-material/Menu'
+import CloseIcon from '@mui/icons-material/Close'
 import { apiGet } from '../lib/api'
 import { colors, radii, type, dinoShadow } from '../theme/tokens'
-import { filterActiveEarnedIds } from '../lib/badgeDefinitions'
+import {
+  BADGE_UNLOCK,
+  filterActiveEarnedIds,
+} from '../lib/badgeDefinitions'
 
 const LOGO_DEFAULT = '/dinosaurs/dino-kaiju.png'
 const LOGO_KAIJU_GUARDIAN = '/dinosaurs/dino-kaiju-happy.png'
-const KAIJU_BADGE_ID = 'kaiju_six'
+
+/** 低於此寬度改漢堡列，避免 App bar 擠成兩行 */
+const COMPACT_NAV_BP = 'md'
+
+function navItemsFor(source, hfUserId) {
+  return [
+    { to: `/${source}/student/${hfUserId}/overview`, label: '總覽', tilt: -2.5 },
+    {
+      to: `/${source}/student/${hfUserId}/conversations`,
+      label: '對話分析',
+      tilt: 1.8,
+    },
+    {
+      to: `/${source}/student/${hfUserId}/practice-next`,
+      label: '練習建議',
+      tilt: -1.2,
+    },
+  ]
+}
 
 /**
  * 導覽貼紙：與總覽膠囊／一級按鈕刻意不同
@@ -22,7 +49,7 @@ const KAIJU_BADGE_ID = 'kaiju_six'
  * - 選中：貼上感 + 手繪底線（非綠底白字）
  * - hover：彈跳，不裁切
  */
-const NavItem = ({ to, label, tilt = -2 }) => {
+const NavItem = ({ to, label, tilt = -2, onNavigated, fullWidth = false }) => {
   const navigate = useNavigate()
   return (
     <Button
@@ -43,6 +70,7 @@ const NavItem = ({ to, label, tilt = -2 }) => {
         e.preventDefault()
         startTransition(() => {
           navigate(to)
+          onNavigated?.()
         })
       }}
       // React Router 會自動加上 .active；勿傳 function className（MUI 轉發會壞掉）
@@ -53,6 +81,8 @@ const NavItem = ({ to, label, tilt = -2 }) => {
         px: 2,
         py: 1,
         minWidth: 0,
+        width: fullWidth ? '100%' : 'auto',
+        justifyContent: fullWidth ? 'flex-start' : 'center',
         // 票券感：不對稱圓角
         borderRadius: '14px 18px 12px 16px',
         textTransform: 'none',
@@ -64,7 +94,7 @@ const NavItem = ({ to, label, tilt = -2 }) => {
         border: '2px dashed',
         borderColor: colors.sand,
         boxShadow: `2px 3px 0 ${colors.line}`,
-        transform: `rotate(${tilt}deg)`,
+        transform: fullWidth ? 'none' : `rotate(${tilt}deg)`,
         overflow: 'visible',
         transition:
           'transform 0.18s cubic-bezier(.34,1.56,.64,1), background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease, box-shadow 0.18s ease',
@@ -74,7 +104,9 @@ const NavItem = ({ to, label, tilt = -2 }) => {
           borderColor: colors.leaf,
           color: colors.leafDark,
           boxShadow: `3px 5px 0 ${colors.sand}`,
-          transform: `translateY(-4px) rotate(${tilt * -0.5}deg) scale(1.04)`,
+          transform: fullWidth
+            ? 'translateY(-2px)'
+            : `translateY(-4px) rotate(${tilt * -0.5}deg) scale(1.04)`,
         },
         '&.active': {
           zIndex: 2,
@@ -84,7 +116,9 @@ const NavItem = ({ to, label, tilt = -2 }) => {
           borderColor: colors.leaf,
           borderWidth: 2.5,
           boxShadow: `3px 4px 0 ${colors.leaf}55`,
-          transform: 'translateY(-2px) rotate(0deg) scale(1.03)',
+          transform: fullWidth
+            ? 'none'
+            : 'translateY(-2px) rotate(0deg) scale(1.03)',
           // 手繪點點底線（不是一級按鈕）
           '&::before': {
             content: '""',
@@ -117,7 +151,9 @@ const NavItem = ({ to, label, tilt = -2 }) => {
             color: colors.leafDark,
             borderColor: colors.leaf,
             boxShadow: `4px 6px 0 ${colors.leaf}44`,
-            transform: 'translateY(-5px) rotate(1deg) scale(1.05)',
+            transform: fullWidth
+              ? 'translateY(-2px)'
+              : 'translateY(-5px) rotate(1deg) scale(1.05)',
           },
         },
       }}
@@ -136,10 +172,57 @@ function DashTrail() {
         height: 0,
         borderTop: `2px dashed ${colors.sand}`,
         flexShrink: 0,
-        display: { xs: 'none', sm: 'block' },
         opacity: 0.85,
       }}
     />
+  )
+}
+
+function GreetingChip({ displayName, sx }) {
+  return (
+    <Box
+      sx={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 1,
+        px: 1.5,
+        py: 0.75,
+        borderRadius: `${radii.btn}px`,
+        bgcolor: 'transparent',
+        border: '2px solid',
+        borderColor: colors.sand,
+        maxWidth: 260,
+        flexShrink: 0,
+        ...sx,
+      }}
+    >
+      <Box
+        sx={{
+          width: 8,
+          height: 8,
+          borderRadius: '50%',
+          bgcolor: colors.leaf,
+          flexShrink: 0,
+          '@keyframes headerPulse': {
+            '0%, 100%': { opacity: 1, transform: 'scale(1)' },
+            '50%': { opacity: 0.55, transform: 'scale(0.85)' },
+          },
+          animation: 'headerPulse 2s ease-in-out infinite',
+        }}
+      />
+      <Typography
+        sx={{
+          fontWeight: 800,
+          fontSize: { xs: 13, sm: 14 },
+          color: colors.ink,
+          whiteSpace: 'nowrap',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+        }}
+      >
+        {displayName}
+      </Typography>
+    </Box>
   )
 }
 
@@ -148,6 +231,9 @@ export default function StudentHeader() {
   const [profile, setProfile] = useState(null)
   const [logoSrc, setLogoSrc] = useState(LOGO_DEFAULT)
   const [showFire, setShowFire] = useState(true)
+  const [menuOpen, setMenuOpen] = useState(false)
+
+  const navItems = navItemsFor(source, hfUserId)
 
   useEffect(() => {
     let cancelled = false
@@ -174,14 +260,14 @@ export default function StudentHeader() {
           d?.badge?.earnedIds,
           d?.badgeDefinitions,
         )
-        const hasKaiju = earned.includes(KAIJU_BADGE_ID)
+        const hasKaiju = earned.includes(BADGE_UNLOCK.kaiju)
         if (!hasKaiju) {
           setLogoSrc(LOGO_DEFAULT)
           setShowFire(true)
           return
         }
         const def = (d?.badgeDefinitions || []).find(
-          (b) => b?.id === KAIJU_BADGE_ID,
+          (b) => b?.id === BADGE_UNLOCK.kaiju,
         )
         setLogoSrc(def?.iconUrl || LOGO_KAIJU_GUARDIAN)
         setShowFire(false)
@@ -202,6 +288,8 @@ export default function StudentHeader() {
     profile?.lastname || profile?.firstname
       ? `${profile?.lastname ?? ''}${profile?.firstname ?? ''}您好`
       : `ID ${hfUserId} 您好`
+
+  const closeMenu = () => setMenuOpen(false)
 
   return (
     <AppBar
@@ -234,6 +322,7 @@ export default function StudentHeader() {
           sx={{
             display: 'flex',
             alignItems: 'center',
+            flexWrap: 'nowrap',
             gap: { xs: 1.5, sm: 2.5 },
             px: { xs: 2, sm: 2 },
             overflow: 'visible',
@@ -332,81 +421,80 @@ export default function StudentHeader() {
 
               {/* 火焰錨點：對齊張開的嘴巴，再向左噴出（進階守護龍圖不噴火） */}
               {showFire ? (
-              <Box
-                aria-hidden
-                sx={{
-                  position: 'absolute',
-                  // 嘴巴約在圖左側中上
-                  left: { xs: '20%', sm: '22%' },
-                  top: { xs: '38%', sm: '40%' },
-                  width: 0,
-                  height: 0,
-                  zIndex: 2,
-                  pointerEvents: 'none',
-                }}
-              >
                 <Box
+                  aria-hidden
                   sx={{
                     position: 'absolute',
-                    right: 0,
-                    top: '50%',
-                    width: { xs: 72, sm: 92 },
-                    height: { xs: 28, sm: 34 },
-                    mt: { xs: '-14px', sm: '-17px' },
-                    transformOrigin: 'right center',
-                    animation: 'headerFireBreath 3s ease-out infinite',
-                    background: `
+                    left: { xs: '20%', sm: '22%' },
+                    top: { xs: '38%', sm: '40%' },
+                    width: 0,
+                    height: 0,
+                    zIndex: 2,
+                    pointerEvents: 'none',
+                  }}
+                >
+                  <Box
+                    sx={{
+                      position: 'absolute',
+                      right: 0,
+                      top: '50%',
+                      width: { xs: 72, sm: 92 },
+                      height: { xs: 28, sm: 34 },
+                      mt: { xs: '-14px', sm: '-17px' },
+                      transformOrigin: 'right center',
+                      animation: 'headerFireBreath 3s ease-out infinite',
+                      background: `
                       radial-gradient(ellipse at 92% 50%, #fff8c0 0%, #fff8c0 18%, transparent 42%),
                       radial-gradient(ellipse at 60% 50%, #ffb347 0%, #ff8a1f 45%, transparent 74%),
                       radial-gradient(ellipse at 22% 50%, #ff5a2a 0%, #e23a1a 50%, transparent 80%)
                     `,
-                    filter: 'blur(0.35px)',
-                    borderRadius: '48% 8% 8% 48%',
-                    '&::before, &::after': {
-                      content: '""',
-                      position: 'absolute',
-                      right: '4%',
-                      top: '50%',
-                      transform: 'translateY(-50%)',
-                      borderRadius: '50%',
-                      pointerEvents: 'none',
-                    },
-                    '&::before': {
-                      width: '58%',
-                      height: '78%',
-                      background:
-                        'radial-gradient(ellipse, #ffe566 0%, #ff9a1a 55%, transparent 75%)',
-                      filter: 'blur(1.1px)',
-                    },
-                    '&::after': {
-                      width: '38%',
-                      height: '60%',
-                      right: '30%',
-                      background:
-                        'radial-gradient(ellipse, #ff7a2e 0%, #d62818 60%, transparent 80%)',
-                      filter: 'blur(1.3px)',
-                      opacity: 0.95,
-                    },
-                  }}
-                />
-                {[0, 1, 2, 3].map((i) => (
-                  <Box
-                    key={i}
-                    sx={{
-                      position: 'absolute',
-                      right: 2,
-                      top: -4 + i * 5,
-                      width: 6,
-                      height: 6,
-                      borderRadius: '50%',
-                      bgcolor: i % 2 === 0 ? '#ff6b2d' : '#ffe566',
-                      boxShadow: '0 0 8px #ff8a1f',
-                      animation: 'headerFireSpark 3s ease-out infinite',
-                      animationDelay: `${i * 0.04}s`,
+                      filter: 'blur(0.35px)',
+                      borderRadius: '48% 8% 8% 48%',
+                      '&::before, &::after': {
+                        content: '""',
+                        position: 'absolute',
+                        right: '4%',
+                        top: '50%',
+                        transform: 'translateY(-50%)',
+                        borderRadius: '50%',
+                        pointerEvents: 'none',
+                      },
+                      '&::before': {
+                        width: '58%',
+                        height: '78%',
+                        background:
+                          'radial-gradient(ellipse, #ffe566 0%, #ff9a1a 55%, transparent 75%)',
+                        filter: 'blur(1.1px)',
+                      },
+                      '&::after': {
+                        width: '38%',
+                        height: '60%',
+                        right: '30%',
+                        background:
+                          'radial-gradient(ellipse, #ff7a2e 0%, #d62818 60%, transparent 80%)',
+                        filter: 'blur(1.3px)',
+                        opacity: 0.95,
+                      },
                     }}
                   />
-                ))}
-              </Box>
+                  {[0, 1, 2, 3].map((i) => (
+                    <Box
+                      key={i}
+                      sx={{
+                        position: 'absolute',
+                        right: 2,
+                        top: -4 + i * 5,
+                        width: 6,
+                        height: 6,
+                        borderRadius: '50%',
+                        bgcolor: i % 2 === 0 ? '#ff6b2d' : '#ffe566',
+                        boxShadow: '0 0 8px #ff8a1f',
+                        animation: 'headerFireSpark 3s ease-out infinite',
+                        animationDelay: `${i * 0.04}s`,
+                      }}
+                    />
+                  ))}
+                </Box>
               ) : null}
             </Box>
             <Box>
@@ -435,90 +523,128 @@ export default function StudentHeader() {
             </Box>
           </Box>
 
-          {/* 中間導覽：票券貼紙列（overflow visible，hover 不裁切） */}
+          {/* 桌面導覽：寬螢幕才展開，避免擠成兩行 */}
           <Box
             sx={{
-              display: 'flex',
+              display: { xs: 'none', [COMPACT_NAV_BP]: 'flex' },
               alignItems: 'center',
-              gap: { xs: 0.75, sm: 0.5 },
+              gap: 0.5,
               py: 1.25,
               px: 0.5,
               overflow: 'visible',
-              maxWidth: { xs: '46vw', sm: 'none' },
-              // 小螢幕仍可橫滑，但上下留白避免裁切
-              '@media (max-width: 600px)': {
-                overflowX: 'auto',
-                overflowY: 'visible',
-                scrollbarWidth: 'none',
-                '&::-webkit-scrollbar': { display: 'none' },
+              minWidth: 0,
+            }}
+          >
+            {navItems.map((item, i) => (
+              <Box
+                key={item.to}
+                sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}
+              >
+                {i > 0 ? <DashTrail /> : null}
+                <NavItem to={item.to} label={item.label} tilt={item.tilt} />
+              </Box>
+            ))}
+          </Box>
+
+          <Box sx={{ flex: 1, minWidth: 8 }} />
+
+          {/* 桌面問候 */}
+          <GreetingChip
+            displayName={displayName}
+            sx={{ display: { xs: 'none', [COMPACT_NAV_BP]: 'flex' } }}
+          />
+
+          {/* 窄螢幕：漢堡列 */}
+          <IconButton
+            aria-label='開啟導覽選單'
+            onClick={() => setMenuOpen(true)}
+            sx={{
+              display: { xs: 'inline-flex', [COMPACT_NAV_BP]: 'none' },
+              color: colors.ink,
+              bgcolor: colors.paper,
+              border: '2px dashed',
+              borderColor: colors.sand,
+              borderRadius: '14px 18px 12px 16px',
+              boxShadow: `2px 3px 0 ${colors.line}`,
+              width: 44,
+              height: 44,
+              flexShrink: 0,
+              '&:hover': {
+                bgcolor: colors.sageSoft,
+                borderColor: colors.leaf,
+                color: colors.leafDark,
               },
             }}
           >
-            <NavItem
-              to={`/${source}/student/${hfUserId}/overview`}
-              label='總覽'
-              tilt={-2.5}
-            />
-            <DashTrail />
-            <NavItem
-              to={`/${source}/student/${hfUserId}/conversations`}
-              label='對話分析'
-              tilt={1.8}
-            />
-            <DashTrail />
-            <NavItem
-              to={`/${source}/student/${hfUserId}/practice-next`}
-              label='練習建議'
-              tilt={-1.2}
-            />
-          </Box>
-
-          <Box sx={{ flex: 1 }} />
-
-          {/* 右側問候：次級按鈕 sand 邊 */}
-          <Box
-            sx={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 1,
-              px: 1.5,
-              py: 0.75,
-              borderRadius: `${radii.btn}px`,
-              bgcolor: 'transparent',
-              border: '2px solid',
-              borderColor: colors.sand,
-              maxWidth: { xs: 140, sm: 260 },
-            }}
-          >
-            <Box
-              sx={{
-                width: 8,
-                height: 8,
-                borderRadius: '50%',
-                bgcolor: colors.leaf,
-                flexShrink: 0,
-                '@keyframes headerPulse': {
-                  '0%, 100%': { opacity: 1, transform: 'scale(1)' },
-                  '50%': { opacity: 0.55, transform: 'scale(0.85)' },
-                },
-                animation: 'headerPulse 2s ease-in-out infinite',
-              }}
-            />
-            <Typography
-              sx={{
-                fontWeight: 800,
-                fontSize: { xs: 12, sm: 14 },
-                color: colors.ink,
-                whiteSpace: 'nowrap',
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-              }}
-            >
-              {displayName}
-            </Typography>
-          </Box>
+            <MenuIcon />
+          </IconButton>
         </Container>
       </Toolbar>
+
+      <Drawer
+        anchor='right'
+        open={menuOpen}
+        onClose={closeMenu}
+        PaperProps={{
+          sx: {
+            width: { xs: 'min(320px, 86vw)', sm: 340 },
+            bgcolor: colors.wash,
+            backgroundImage: `linear-gradient(180deg, ${colors.paper} 0%, ${colors.wash} 100%)`,
+            borderLeft: `3px dashed ${colors.leaf}aa`,
+            px: 2,
+            py: 1.5,
+          },
+        }}
+      >
+        <Stack
+          direction='row'
+          alignItems='center'
+          justifyContent='space-between'
+          sx={{ mb: 1.5 }}
+        >
+          <Typography sx={{ ...type.sectionTitle, fontSize: 16 }}>
+            導覽
+          </Typography>
+          <IconButton
+            aria-label='關閉導覽選單'
+            onClick={closeMenu}
+            sx={{
+              color: colors.ink,
+              border: '2px dashed',
+              borderColor: colors.sand,
+              borderRadius: '12px',
+            }}
+          >
+            <CloseIcon fontSize='small' />
+          </IconButton>
+        </Stack>
+
+        <GreetingChip
+          displayName={displayName}
+          sx={{ display: 'flex', maxWidth: '100%', mb: 2 }}
+        />
+
+        <Divider
+          sx={{
+            borderStyle: 'dashed',
+            borderColor: colors.sand,
+            mb: 2,
+          }}
+        />
+
+        <Stack spacing={1.25}>
+          {navItems.map((item) => (
+            <NavItem
+              key={item.to}
+              to={item.to}
+              label={item.label}
+              tilt={item.tilt}
+              fullWidth
+              onNavigated={closeMenu}
+            />
+          ))}
+        </Stack>
+      </Drawer>
     </AppBar>
   )
 }
