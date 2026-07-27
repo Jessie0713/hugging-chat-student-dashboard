@@ -211,14 +211,80 @@ CEFR_TO_PRACTICE_TIER: dict[str, str] = {
     "C1C2": "高階",
 }
 
-ACTIVE_ACHIEVEMENT_BADGE_IDS = {
-    "first_message",
-    "effective_round",
-    "topics_5",
-    "topics_6",
-    "topics_7",
-    "advanced_cert",
+# 舊 users.badge.earnedIds → 新 Mongo badges.id（與 Chat UI LEGACY_BADGE_ID_MAP 對齊）
+LEGACY_BADGE_ID_MAP: dict[str, str | None] = {
+    "first_message": "egg_hatch",
+    "effective_round": "first_nest",
+    "topics_5": "trail_five",
+    "topics_6": None,
+    "topics_7": None,
+    "advanced_cert": None,
 }
+
+# 純舊制／習慣型 id（僅標記 legacy，不進現行 earned）
+LEGACY_HABIT_BADGE_IDS = {
+    "streak_3",
+    "streak_7",
+    "levelup_3",
+    "assist_3",
+    "msg_100",
+    "voice_master",
+}
+
+
+def remap_legacy_badge_ids(ids: list) -> list[str]:
+    out: list[str] = []
+    seen: set[str] = set()
+    for raw in ids or []:
+        if not isinstance(raw, str):
+            continue
+        if raw in LEGACY_BADGE_ID_MAP:
+            mapped = LEGACY_BADGE_ID_MAP[raw]
+            if mapped and mapped not in seen:
+                seen.add(mapped)
+                out.append(mapped)
+            continue
+        if raw in LEGACY_HABIT_BADGE_IDS:
+            continue
+        if raw not in seen:
+            seen.add(raw)
+            out.append(raw)
+    return out
+
+
+async def load_badge_definitions(db) -> list[dict]:
+    """讀 Mongo `badges` collection（enabled≠false，依 sortOrder）。"""
+    try:
+        cursor = db["badges"].find({"enabled": {"$ne": False}}).sort(
+            [("sortOrder", 1)]
+        )
+        docs = await cursor.to_list(length=100)
+    except Exception:
+        return []
+
+    defs: list[dict] = []
+    for doc in docs:
+        bid = doc.get("id")
+        if not isinstance(bid, str) or not bid:
+            continue
+        threshold = int(doc.get("threshold") or 0)
+        rule_type = doc.get("ruleType") or "completed_topics"
+        defs.append(
+            {
+                "id": bid,
+                "name": doc.get("name") or bid,
+                "meaning": doc.get("meaning") or "",
+                "unlock": doc.get("unlockText") or doc.get("unlock") or "",
+                "iconUrl": doc.get("iconUrl") or "",
+                "ruleType": rule_type,
+                "threshold": threshold,
+                "sortOrder": int(doc.get("sortOrder") or 0),
+                "enabled": doc.get("enabled") is not False,
+                "phase": doc.get("phase"),
+            }
+        )
+    defs.sort(key=lambda d: d.get("sortOrder") or 0)
+    return defs
 
 
 def _practice_tier_from_level_key(level_key: str | None) -> str | None:
@@ -289,6 +355,7 @@ def _normalize_achievement_badge_stats(badge_stats: dict) -> dict:
 
 
 def compute_grade_estimate(stats: dict, earned_ids: list) -> dict:
+    """對齊恐龍獎章門檻：5→及格、8→優秀、10→滿分；進階 6 題。"""
     earned = set(earned_ids or [])
     completed = int(stats.get("completedTopicCount") or 0)
     advanced = int(stats.get("advancedTopicCount") or 0)
@@ -297,12 +364,12 @@ def compute_grade_estimate(stats: dict, earned_ids: list) -> dict:
     score_label = "尚未達標"
     badge_id = None
 
-    if "topics_7" in earned or completed >= 7:
-        score, score_label, badge_id = 100, "滿分", "topics_7"
-    elif "topics_6" in earned or completed >= 6:
-        score, score_label, badge_id = 85, "優秀", "topics_6"
-    elif "topics_5" in earned or completed >= 5:
-        score, score_label, badge_id = 65, "及格線", "topics_5"
+    if "rex_ten" in earned or completed >= 10:
+        score, score_label, badge_id = 100, "滿分", "rex_ten"
+    elif "armor_ready" in earned or completed >= 8:
+        score, score_label, badge_id = 85, "優秀", "armor_ready"
+    elif "trail_five" in earned or completed >= 5:
+        score, score_label, badge_id = 65, "及格線", "trail_five"
 
     return {
         "score": score,
@@ -310,7 +377,7 @@ def compute_grade_estimate(stats: dict, earned_ids: list) -> dict:
         "badgeId": badge_id,
         "completedTopicCount": completed,
         "advancedTopicCount": advanced,
-        "levelRequirementMet": "advanced_cert" in earned or advanced >= 4,
+        "levelRequirementMet": "kaiju_six" in earned or advanced >= 6,
     }
 
 
@@ -354,16 +421,44 @@ async def build_badge_topic_details(
     return details
 
 
-def build_badge_payload(badge: dict, source: str) -> dict:
-    """Normalize users.badge；rolling_level / fixed_level 皆用成績制 6 枚獎章。"""
+def build_badge_payload(
+    badge: dict,
+    source: str,
+    definitions: list[dict] | None = None,
+) -> dict:
+    """Normalize users.badge；earnedIds 對齊 Mongo `badges.id`（含舊 id remap）。"""
     badge_stats = badge.get("stats") or {}
     earned_raw = badge.get("earnedIds") or []
     earned_ids = earned_raw if isinstance(earned_raw, list) else []
     inbox = badge.get("inbox") or []
 
     stats = _normalize_achievement_badge_stats(badge_stats)
-    active_earned = [e for e in earned_ids if e in ACTIVE_ACHIEVEMENT_BADGE_IDS]
-    legacy_earned = [e for e in earned_ids if e not in ACTIVE_ACHIEVEMENT_BADGE_IDS]
+    remapped = remap_legacy_badge_ids(earned_ids)
+
+    active_ids = {
+        d["id"] for d in (definitions or []) if isinstance(d.get("id"), str)
+    }
+    if active_ids:
+        active_earned = [e for e in remapped if e in active_ids]
+        legacy_earned = [
+            e
+            for e in earned_ids
+            if isinstance(e, str)
+            and (
+                e in LEGACY_HABIT_BADGE_IDS
+                or e in LEGACY_BADGE_ID_MAP
+                or e not in active_ids
+            )
+        ]
+    else:
+        # DB 尚無 badges 時：回傳 remap 後全部，避免全空
+        active_earned = remapped
+        legacy_earned = [
+            e
+            for e in earned_ids
+            if isinstance(e, str)
+            and (e in LEGACY_HABIT_BADGE_IDS or e in LEGACY_BADGE_ID_MAP)
+        ]
 
     payload = {
         "earnedIds": active_earned,
@@ -382,7 +477,10 @@ async def badges(source: str, hfUserId: str):
     if not user:
         raise HTTPException(status_code=404, detail="User not found in Mongo users")
 
-    badge_payload = build_badge_payload(user.get("badge") or {}, source)
+    definitions = await load_badge_definitions(db)
+    badge_payload = build_badge_payload(
+        user.get("badge") or {}, source, definitions
+    )
     topic_details = await build_badge_topic_details(
         db, user, badge_payload["stats"]
     )
@@ -390,6 +488,7 @@ async def badges(source: str, hfUserId: str):
         "hfUserId": normalize_hf_user_id(hfUserId),
         "mongoUserId": str(user["_id"]),
         "badge": badge_payload,
+        "badgeDefinitions": definitions,
         "badgeTopicDetails": topic_details,
     }
 # backend/student_api.py
@@ -890,8 +989,11 @@ async def student_overview(source: str, hfUserId: str):
         cefr_meta_map = await build_assistant_meta_map(db, cefr_assistant_ids)
         cefr_groups = build_cefr_groups_from_agent_cefr(agent_cefr, cefr_meta_map)
         advanced_fit_progress = build_rolling_advanced_progress(agent_cefr)
-    # ---- badge data
-    badge_payload = build_badge_payload(user.get("badge") or {}, source)
+    # ---- badge data（定義來自 Mongo badges）
+    badge_definitions = await load_badge_definitions(db)
+    badge_payload = build_badge_payload(
+        user.get("badge") or {}, source, badge_definitions
+    )
 
     stats_out = {
         **stats,
@@ -907,6 +1009,7 @@ async def student_overview(source: str, hfUserId: str):
         "mongoUserId": str(user_oid),
         "stats": stats_out,
         "badge": badge_payload,
+        "badgeDefinitions": badge_definitions,
         "badgeTopicDetails": badge_topic_details,
         "timeseries": timeseries,
         "assistantUsage": assistant_usage,

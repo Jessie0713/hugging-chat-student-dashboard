@@ -1,47 +1,33 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef } from 'react'
 import { Box } from '@mui/material'
 import { dinoShadow } from '../theme/tokens'
-
-/** 落下 → 展翅 → 上揚 → 再落下 */
-export const FLYER_FLAP_FRAMES = [
-  '/dinosaurs/dino-flyer-flap-01.png',
-  '/dinosaurs/dino-flyer-flap-02.png',
-  '/dinosaurs/dino-flyer-flap-03.png',
-  '/dinosaurs/dino-flyer-flap-04.png',
-  '/dinosaurs/dino-flyer-flap-05.png',
-  '/dinosaurs/dino-flyer-flap-06.png',
-  '/dinosaurs/dino-flyer-flap-07.png',
-  '/dinosaurs/dino-flyer-flap-08.png',
-]
+import { FLYER_FLAP_FRAMES } from '../lib/flyerFlapFrames'
+import { clamp01, easeInOut } from '../lib/ambientMotion'
+import {
+  flyerDinoScreenRect,
+  opacityOverContent,
+} from '../lib/ambientContentFade'
 
 const N_FRAMES = FLYER_FLAP_FRAMES.length
 const FLIGHT_MS = 17000
-const PAUSE_MS = 20000
-/** 拍翅換幀間隔（無淡入淡出，直接切幀） */
 const FLAP_FRAME_MS = 95
+const START_DELAY_MS = 4000
+const PAUSE_MS = 45000
+const OPACITY_EVERY = 4
 
-function easeInOut(t) {
-  return t < 0.5 ? 2 * t * t : 1 - (-2 * t + 2) ** 2 / 2
-}
-
-function clamp01(t) {
-  return Math.min(1, Math.max(0, t))
-}
-
+/** 只走高空／中上帶，避免與地上甲龍／角龍擦撞 */
 const SPAWNS = [
-  { id: 'rightHigh', y0: 0.08, y1: 0.22, kind: 'soar' },
-  { id: 'rightMid', y0: 0.28, y1: 0.42, kind: 'weave' },
-  { id: 'rightLow', y0: 0.48, y1: 0.62, kind: 'glide' },
-  { id: 'topRight', y0: -0.05, y1: 0.35, kind: 'arc' },
-  { id: 'bottomRight', y0: 0.75, y1: 0.4, kind: 'soar' },
-  { id: 'rightDive', y0: 0.18, y1: 0.55, kind: 'glide' },
-  { id: 'rightClimb', y0: 0.58, y1: 0.2, kind: 'arc' },
+  { id: 'rightHigh', y0: 0.06, y1: 0.18, kind: 'soar' },
+  { id: 'rightMid', y0: 0.16, y1: 0.3, kind: 'weave' },
+  { id: 'topRight', y0: -0.04, y1: 0.26, kind: 'arc' },
+  { id: 'rightDive', y0: 0.12, y1: 0.34, kind: 'glide' },
+  { id: 'rightClimb', y0: 0.32, y1: 0.12, kind: 'arc' },
+  { id: 'highWeave', y0: 0.1, y1: 0.24, kind: 'weave' },
 ]
 
 function samplePath(progress, spawn, size, w, h) {
-  const p = easeInOut(clamp01(progress))
-  const p2 = easeInOut(clamp01(progress + 0.005))
-
+  const p = easeInOut(progress)
+  const p2 = easeInOut(progress + 0.005)
   const xAt = (pp) => w - (w + size) * pp
 
   const yAt = (pp) => {
@@ -64,19 +50,18 @@ function samplePath(progress, spawn, size, w, h) {
 
   const x = xAt(p)
   const y = yAt(p)
-  const dx = xAt(p2) - x
-  const dy = yAt(p2) - y
-  const pitch = (Math.atan2(dy, Math.abs(dx) + 0.001) * 180) / Math.PI
-
+  const pitch =
+    (Math.atan2(yAt(p2) - y, Math.abs(xAt(p2) - x) + 0.001) * 180) / Math.PI
   return { x, y, rot: pitch, size }
 }
 
+/** 翼手龍飛行：直接改 DOM，避免每幀 React setState 卡住導覽 */
 export default function AmbientFlyer() {
-  const [enabled, setEnabled] = useState(true)
-  const [pose, setPose] = useState(null)
+  const imgRef = useRef(null)
   const rafRef = useRef(0)
   const flightRef = useRef(null)
-  const flapRef = useRef({ frame: 0, lastTs: 0 })
+  const flapRef = useRef({ frame: 0, lastTs: 0, drawn: -1 })
+  const tickN = useRef(0)
 
   useEffect(() => {
     FLYER_FLAP_FRAMES.forEach((src) => {
@@ -86,38 +71,33 @@ export default function AmbientFlyer() {
   }, [])
 
   useEffect(() => {
-    const mq = window.matchMedia('(prefers-reduced-motion: reduce)')
-    const sync = () => setEnabled(!mq.matches)
-    sync()
-    mq.addEventListener?.('change', sync)
-    return () => mq.removeEventListener?.('change', sync)
-  }, [])
+    let cancelled = false
+    let startTimer = 0
+    const img = imgRef.current
 
-  useEffect(() => {
-    if (!enabled) {
-      setPose(null)
-      return undefined
+    const hide = () => {
+      if (!img) return
+      img.style.visibility = 'hidden'
+      img.style.opacity = '0'
     }
 
-    let cancelled = false
-    let pauseTimer = 0
-
     const startFlight = () => {
-      if (cancelled) return
+      if (cancelled || !img) return
       const spawn = SPAWNS[Math.floor(Math.random() * SPAWNS.length)]
-      const duration = FLIGHT_MS + Math.floor(Math.random() * 3500) - 1200
-      const w = window.innerWidth
-      const size = w < 600 ? 150 : 220
-      flapRef.current = { frame: 0, lastTs: performance.now() }
+      const size = window.innerWidth < 600 ? 150 : 220
+      flapRef.current = { frame: 0, lastTs: performance.now(), drawn: -1 }
+      tickN.current = 0
       flightRef.current = {
         spawn,
-        duration,
+        duration: FLIGHT_MS + Math.floor(Math.random() * 3500) - 1200,
         size,
         startedAt: performance.now(),
       }
+      img.style.width = `${size}px`
+      img.style.visibility = 'visible'
 
       const tick = (now) => {
-        if (cancelled || !flightRef.current) return
+        if (cancelled || !flightRef.current || !img) return
         const { spawn: sp, duration: d, size: sz, startedAt: t0 } =
           flightRef.current
         const progress = (now - t0) / d
@@ -130,34 +110,48 @@ export default function AmbientFlyer() {
         }
 
         if (progress >= 1) {
-          setPose(null)
-          pauseTimer = window.setTimeout(startFlight, PAUSE_MS)
+          hide()
+          startTimer = window.setTimeout(startFlight, PAUSE_MS)
           return
         }
 
         const pos = samplePath(
-          progress,
+          clamp01(progress),
           sp,
           sz,
           window.innerWidth,
           window.innerHeight,
         )
-        setPose({ ...pos, frame: flap.frame })
+
+        if (flap.drawn !== flap.frame) {
+          flap.drawn = flap.frame
+          img.src = FLYER_FLAP_FRAMES[flap.frame]
+        }
+        img.style.transform = `translate3d(${pos.x}px, ${pos.y}px, 0) rotate(${pos.rot}deg)`
+
+        tickN.current += 1
+        if (tickN.current % OPACITY_EVERY === 1) {
+          img.style.opacity = String(
+            opacityOverContent(
+              flyerDinoScreenRect({ x: pos.x, y: pos.y, size: sz }),
+              { clear: 0.78, ghost: 0.08 },
+            ),
+          )
+        }
+
         rafRef.current = requestAnimationFrame(tick)
       }
       rafRef.current = requestAnimationFrame(tick)
     }
 
-    startFlight()
-
+    hide()
+    startTimer = window.setTimeout(startFlight, START_DELAY_MS)
     return () => {
       cancelled = true
       cancelAnimationFrame(rafRef.current)
-      window.clearTimeout(pauseTimer)
+      window.clearTimeout(startTimer)
     }
-  }, [enabled])
-
-  if (!enabled || !pose) return null
+  }, [])
 
   return (
     <Box
@@ -165,32 +159,30 @@ export default function AmbientFlyer() {
       sx={{
         position: 'fixed',
         inset: 0,
-        m: 0,
         overflow: 'hidden',
         pointerEvents: 'none',
-        // 在儀表板後方，不遮住卡片／文字
         zIndex: 0,
       }}
     >
       <Box
         component='img'
-        src={FLYER_FLAP_FRAMES[pose.frame]}
+        ref={imgRef}
+        src={FLYER_FLAP_FRAMES[0]}
         alt=''
         sx={{
           position: 'absolute',
           left: 0,
           top: 0,
-          width: pose.size,
+          width: 220,
           height: 'auto',
-          m: 0,
           display: 'block',
-          opacity: 0.92,
-          transform: `translate3d(${pose.x}px, ${pose.y}px, 0) rotate(${pose.rot}deg)`,
+          visibility: 'hidden',
+          opacity: 0,
           transformOrigin: 'center center',
-          transition: 'none',
           filter: dinoShadow,
-          willChange: 'transform',
+          willChange: 'transform, opacity',
           userSelect: 'none',
+          pointerEvents: 'none',
         }}
       />
     </Box>

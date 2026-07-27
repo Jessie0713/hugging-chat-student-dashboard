@@ -51,11 +51,11 @@ export default function BadgeGradeCard({ gradeEstimate, loading }) {
             </Stack>
 
             <Typography variant='body2' sx={{ opacity: 0.8 }}>
-              有效主題 {completed}/7
+              有效主題 {completed}/10
               <Box component='span' sx={{ mx: 1, opacity: 0.4 }}>
                 ·
               </Box>
-              進階達標 {advanced}/4
+              進階達標 {advanced}/6
             </Typography>
 
             <Chip
@@ -69,7 +69,7 @@ export default function BadgeGradeCard({ gradeEstimate, loading }) {
             />
 
             <Typography variant='caption' sx={{ opacity: 0.6 }}>
-              65 分＝5 題有效一輪 · 85 分＝6 題 · 100 分＝7 題 · 進階達標＝4
+              65 分＝5 題有效一輪 · 85 分＝8 題 · 100 分＝10 題 · 進階達標＝6
               題進階
             </Typography>
           </Stack>

@@ -148,11 +148,6 @@ export function getRubricConditionsForTier(tier) {
   return RUBRIC_BY_TIER['基礎']
 }
 
-/** @deprecated 請用 getRubricConditionsForTier */
-export function getAdvancedRubricConditions() {
-  return getRubricConditionsForTier('進階')
-}
-
 export function flattenRatedAssistants(cefrGroups = []) {
   return (Array.isArray(cefrGroups) ? cefrGroups : [])
     .flatMap((g) => g.assistants || [])
@@ -274,10 +269,6 @@ export function summarizeFit(items = []) {
 /** 自我調節共同目標：6 個聊天室到達「進階」 */
 export const SRL_GOAL_TIER = '進階'
 export const SRL_GOAL_ROOMS = 6
-/** @deprecated 請用 SRL_GOAL_TIER */
-export const FIXED_SRL_GOAL_TIER = SRL_GOAL_TIER
-/** @deprecated 請用 SRL_GOAL_ROOMS */
-export const FIXED_SRL_GOAL_ROOMS = SRL_GOAL_ROOMS
 
 function normalizeFitKey(fitStatus) {
   return String(fitStatus || '')

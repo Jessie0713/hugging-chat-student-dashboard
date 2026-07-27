@@ -44,9 +44,8 @@ import PracticeFitSummaryCard from '../components/PracticeFitSummaryCard'
 import MyPracticePanel from '../components/MyPracticePanel'
 import {
   filterActiveEarnedIds,
-  getBadgesForSource,
   hasLegacyEarnedIds,
-  isFixedLevelSource,
+  hydrateBadgeDefinitions,
 } from '../lib/badgeDefinitions'
 import {
   cefrToTier,
@@ -863,15 +862,18 @@ function BadgeAccordionPanel({
   stats = {},
   earnedIds = [],
   legacyEarnedIds = [],
+  badgeDefinitions,
   loading,
-  source,
 }) {
   const [filter, setFilter] = useState('all')
 
-  const badges = useMemo(() => getBadgesForSource(source), [source])
+  const badges = useMemo(
+    () => hydrateBadgeDefinitions(badgeDefinitions),
+    [badgeDefinitions],
+  )
   const activeEarnedIds = useMemo(
-    () => filterActiveEarnedIds(earnedIds),
-    [earnedIds],
+    () => filterActiveEarnedIds(earnedIds, badgeDefinitions),
+    [earnedIds, badgeDefinitions],
   )
   const earnedSet = useMemo(() => new Set(activeEarnedIds), [activeEarnedIds])
   const showLegacyNote =
@@ -906,14 +908,14 @@ function BadgeAccordionPanel({
                 徽章總覽
               </Typography>
               <Typography sx={type.subtitle}>
-                對齊口說成績標準 · 已獲得 {earnedCount} / {totalCount}
+                恐龍探險獎章 · 已獲得 {earnedCount} / {totalCount}
               </Typography>
               {showLegacyNote ? (
                 <Typography
                   variant='caption'
                   sx={{ opacity: 0.55, display: 'block', mt: 0.25 }}
                 >
-                  帳號含舊版獎章紀錄，現行制度以 6 枚成績獎章為準
+                  帳號含舊版獎章紀錄，已自動對應現行恐龍獎章
                 </Typography>
               ) : null}
             </Box>
@@ -1001,6 +1003,8 @@ function BadgeAccordionPanel({
                         sx={{ width: '100%' }}
                       >
                         <Avatar
+                          src={earned ? badge.iconUrl : undefined}
+                          alt={earned ? badge.name : undefined}
                           sx={{
                             width: 48,
                             height: 48,
@@ -1009,6 +1013,7 @@ function BadgeAccordionPanel({
                             color: earned ? '#fff' : 'text.primary',
                             border: '1px solid',
                             borderColor: 'grey.300',
+                            '& img': { objectFit: 'contain', p: 0.5 },
                           }}
                         >
                           {earned ? badge.icon : '?'}
@@ -1463,6 +1468,7 @@ export default function Overview({
   const mongoUserId = data?.mongoUserId || ''
   const earnedBadgeIds = data?.badge?.earnedIds ?? []
   const legacyBadgeIds = data?.badge?.legacyEarnedIds ?? []
+  const badgeDefinitions = data?.badgeDefinitions
   const ts = data?.timeseries ?? { labels: [] }
   const labels = ts.labels ?? []
 
@@ -1741,8 +1747,8 @@ export default function Overview({
             stats={badgeStats}
             earnedIds={earnedBadgeIds}
             legacyEarnedIds={legacyBadgeIds}
+            badgeDefinitions={badgeDefinitions}
             loading={loading}
-            source={source}
           />
         </Grid>
       </Grid>

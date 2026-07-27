@@ -11,9 +11,12 @@ import {
   Typography,
 } from '@mui/material'
 import { apiGet } from '../lib/api'
-import { filterActiveEarnedIds, getBadgesForSource } from '../lib/badgeDefinitions'
+import {
+  filterActiveEarnedIds,
+  hydrateBadgeDefinitions,
+} from '../lib/badgeDefinitions'
 
-function BadgeSlot({ unlocked, icon, title, subtitle }) {
+function BadgeSlot({ unlocked, icon, iconUrl, title, subtitle }) {
   return (
     <Stack alignItems='center' spacing={0.5} sx={{ width: 88 }}>
       <Box
@@ -28,10 +31,25 @@ function BadgeSlot({ unlocked, icon, title, subtitle }) {
           bgcolor: unlocked ? 'action.hover' : 'background.paper',
           fontWeight: 800,
           fontSize: 28,
+          overflow: 'hidden',
+          p: unlocked && iconUrl ? 0.75 : 0,
         }}
         title={title}
       >
-        {unlocked ? icon : '?'}
+        {unlocked ? (
+          iconUrl ? (
+            <Box
+              component='img'
+              src={iconUrl}
+              alt={title}
+              sx={{ width: '100%', height: '100%', objectFit: 'contain' }}
+            />
+          ) : (
+            icon
+          )
+        ) : (
+          '?'
+        )}
       </Box>
       <Typography
         variant='caption'
@@ -79,11 +97,17 @@ export default function Badges() {
     }
   }, [source, hfUserId])
 
-  const badgeDefs = useMemo(() => getBadgesForSource(source), [source])
+  const badgeDefs = useMemo(
+    () => hydrateBadgeDefinitions(data?.badgeDefinitions),
+    [data?.badgeDefinitions],
+  )
   const earnedSet = useMemo(() => {
-    const ids = filterActiveEarnedIds(data?.badge?.earnedIds)
+    const ids = filterActiveEarnedIds(
+      data?.badge?.earnedIds,
+      data?.badgeDefinitions,
+    )
     return new Set(ids)
-  }, [data, source])
+  }, [data])
 
   const slots = useMemo(
     () =>
@@ -91,6 +115,7 @@ export default function Badges() {
         id: b.id,
         unlocked: earnedSet.has(b.id),
         icon: b.icon,
+        iconUrl: b.iconUrl,
         title: b.name,
         subtitle: b.gradeNote,
       })),
@@ -102,7 +127,7 @@ export default function Badges() {
   return (
     <Box>
       <Typography variant='h5' sx={{ fontWeight: 700, mb: 2 }}>
-        獎章
+        恐龍探險獎章
       </Typography>
 
       <Card variant='outlined'>
@@ -139,6 +164,7 @@ export default function Badges() {
                   key={s.id}
                   unlocked={s.unlocked}
                   icon={s.icon}
+                  iconUrl={s.iconUrl}
                   title={s.title}
                   subtitle={s.subtitle}
                 />

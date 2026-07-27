@@ -1,32 +1,73 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef } from 'react'
 import { Box } from '@mui/material'
 import { ARMOR_PLAN_FRAMES } from '../lib/armorPlanFrames'
+import { easeInOut, easeSurvey } from '../lib/ambientMotion'
+import {
+  groundDinoScreenRect,
+  opacityOverContent,
+} from '../lib/ambientContentFade'
 
 const N_FRAMES = ARMOR_PLAN_FRAMES.length
 const WALK_MS = 18000
 const PLAN_FRAME_MS = 150
-const START_DELAY_MS = 800
+const START_DELAY_MS = 900
+const OPACITY_EVERY = 4
 
-function easeInOut(t) {
-  return t < 0.5 ? 2 * t * t : 1 - (-2 * t + 2) ** 2 / 2
+const ROUTES = [
+  { id: 'amble', kind: 'weave', bobAmp: 14, bobFreq: 1.6, baseBottom: 0.12, easing: 'inout' },
+  { id: 'survey', kind: 'weave', bobAmp: 10, bobFreq: 2.0, baseBottom: 0.13, easing: 'survey' },
+  { id: 'climbPath', kind: 'slope', y0: 12, y1: -28, baseBottom: 0.1, easing: 'inout' },
+  { id: 'downPath', kind: 'slope', y0: -22, y1: 16, baseBottom: 0.14, easing: 'inout' },
+  { id: 'zigzag', kind: 'meander', bobAmp: 20, bobFreq: 1.2, baseBottom: 0.115, easing: 'inout' },
+  { id: 'patrol', kind: 'scurve', bobAmp: 24, baseBottom: 0.125, easing: 'survey' },
+  { id: 'nearEdge', kind: 'weave', bobAmp: 12, bobFreq: 2.8, baseBottom: 0.09, easing: 'inout' },
+]
+
+function sampleGroundPath(progress, route, size, w) {
+  const ease = route.easing === 'survey' ? easeSurvey : easeInOut
+  const p = ease(progress)
+  const p2 = ease(progress + 0.008)
+  const span = w + size * 2
+  const x = w - span * p
+  const x2 = w - span * p2
+
+  const yAt = (pp) => {
+    if (route.kind === 'weave') {
+      return Math.sin(pp * Math.PI * route.bobFreq) * route.bobAmp
+    }
+    if (route.kind === 'slope') {
+      return route.y0 + (route.y1 - route.y0) * pp
+    }
+    if (route.kind === 'meander') {
+      return (
+        Math.sin(pp * Math.PI * route.bobFreq) * route.bobAmp +
+        Math.sin(pp * Math.PI * 2.7) * (route.bobAmp * 0.4)
+      )
+    }
+    return Math.sin(pp * Math.PI * 2) * route.bobAmp * 0.5
+  }
+
+  const y = yAt(p)
+  const lean =
+    (Math.atan2(yAt(p2) - y, Math.abs(x2 - x) + 0.001) * 180) / Math.PI
+
+  return {
+    x,
+    y,
+    lean: Math.max(-6, Math.min(6, lean * 0.55)),
+    size,
+    baseBottom: route.baseBottom,
+  }
 }
 
-function clamp01(t) {
-  return Math.min(1, Math.max(0, t))
-}
-
-/**
- * 甲龍在棲地中低處由右往左踱步「勘查定策」（儀表板後方）。
- * active / onFinished 由 AmbientGroundExclusive 控制，與角龍互斥。
- */
-export default function AmbientArmorPlanner({
-  active = true,
-  onFinished,
-}) {
-  const [pose, setPose] = useState(null)
+/** 甲龍踱步：跑完一次後通知排程器，由排程器決定下隻地上龍 */
+export default function AmbientArmorPlanner({ onFinished }) {
+  const imgRef = useRef(null)
   const rafRef = useRef(0)
   const walkRef = useRef(null)
-  const frameRef = useRef({ frame: 0, lastTs: 0 })
+  const frameRef = useRef({ frame: 0, lastTs: 0, drawn: -1 })
+  const tickN = useRef(0)
+  const finishedRef = useRef(false)
   const onFinishedRef = useRef(onFinished)
   onFinishedRef.current = onFinished
 
@@ -38,29 +79,47 @@ export default function AmbientArmorPlanner({
   }, [])
 
   useEffect(() => {
-    if (!active) {
-      setPose(null)
-      return undefined
-    }
-
     let cancelled = false
     let startTimer = 0
+    const img = imgRef.current
+    finishedRef.current = false
 
-    const startWalk = () => {
-      if (cancelled) return
-      const w = window.innerWidth
-      const size = w < 600 ? 100 : 138
-      const duration = WALK_MS + Math.floor(Math.random() * 2500) - 800
-      frameRef.current = { frame: 0, lastTs: performance.now() }
+    const hide = () => {
+      if (!img) return
+      img.style.visibility = 'hidden'
+      img.style.opacity = '0'
+    }
+
+    const finish = () => {
+      if (finishedRef.current) return
+      finishedRef.current = true
+      hide()
+      onFinishedRef.current?.()
+    }
+
+    const beginWalk = () => {
+      if (cancelled || !img) {
+        finish()
+        return
+      }
+      const size = window.innerWidth < 600 ? 100 : 138
+      const route = ROUTES[Math.floor(Math.random() * ROUTES.length)]
+      frameRef.current = { frame: 0, lastTs: performance.now(), drawn: -1 }
+      tickN.current = 0
       walkRef.current = {
-        duration,
+        duration: WALK_MS + Math.floor(Math.random() * 3500) - 1000,
         size,
+        route,
         startedAt: performance.now(),
       }
+      img.style.width = `${size}px`
+      img.style.bottom = `${route.baseBottom * 100}%`
+      img.style.visibility = 'visible'
 
       const tick = (now) => {
-        if (cancelled || !walkRef.current) return
-        const { duration: d, size: sz, startedAt: t0 } = walkRef.current
+        if (cancelled || !walkRef.current || !img) return
+        const { duration: d, size: sz, route: rt, startedAt: t0 } =
+          walkRef.current
         const progress = (now - t0) / d
 
         const fr = frameRef.current
@@ -71,29 +130,45 @@ export default function AmbientArmorPlanner({
         }
 
         if (progress >= 1) {
-          setPose(null)
-          onFinishedRef.current?.()
+          finish()
           return
         }
 
-        const p = easeInOut(clamp01(progress))
-        const x = w - (w + sz * 2) * p
-        setPose({ x, size: sz, frame: fr.frame })
+        const pos = sampleGroundPath(progress, rt, sz, window.innerWidth)
+        if (fr.drawn !== fr.frame) {
+          fr.drawn = fr.frame
+          img.src = ARMOR_PLAN_FRAMES[fr.frame]
+        }
+        img.style.transform = `translate3d(${pos.x}px, ${pos.y}px, 0) rotate(${pos.lean}deg)`
+
+        tickN.current += 1
+        if (tickN.current % OPACITY_EVERY === 1) {
+          img.style.opacity = String(
+            opacityOverContent(
+              groundDinoScreenRect({
+                x: pos.x,
+                y: pos.y,
+                size: sz,
+                baseBottom: pos.baseBottom,
+                aspect: 0.75,
+              }),
+            ),
+          )
+        }
+
         rafRef.current = requestAnimationFrame(tick)
       }
       rafRef.current = requestAnimationFrame(tick)
     }
 
-    startTimer = window.setTimeout(startWalk, START_DELAY_MS)
-
+    hide()
+    startTimer = window.setTimeout(beginWalk, START_DELAY_MS)
     return () => {
       cancelled = true
       cancelAnimationFrame(rafRef.current)
       window.clearTimeout(startTimer)
     }
-  }, [active])
-
-  if (!active || !pose) return null
+  }, [])
 
   return (
     <Box
@@ -101,7 +176,6 @@ export default function AmbientArmorPlanner({
       sx={{
         position: 'fixed',
         inset: 0,
-        m: 0,
         overflow: 'hidden',
         pointerEvents: 'none',
         zIndex: 0,
@@ -109,24 +183,23 @@ export default function AmbientArmorPlanner({
     >
       <Box
         component='img'
-        src={ARMOR_PLAN_FRAMES[pose.frame]}
+        ref={imgRef}
+        src={ARMOR_PLAN_FRAMES[0]}
         alt=''
         sx={{
           position: 'absolute',
           left: 0,
-          bottom: { xs: '10%', sm: '12%', md: '14%' },
-          width: pose.size,
+          bottom: '12%',
+          width: 138,
           height: 'auto',
-          m: 0,
           display: 'block',
-          opacity: 0.9,
-          transform: `translate3d(${pose.x}px, 0, 0)`,
+          visibility: 'hidden',
+          opacity: 0,
           transformOrigin: 'center bottom',
-          transition: 'none',
-          // 輕柔立體感；貼地陰影已在幀圖內
           filter: 'drop-shadow(0 6px 8px rgba(74,69,63,0.18))',
-          willChange: 'transform',
+          willChange: 'transform, opacity',
           userSelect: 'none',
+          pointerEvents: 'none',
         }}
       />
     </Box>

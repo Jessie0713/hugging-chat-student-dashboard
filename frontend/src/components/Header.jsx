@@ -1,6 +1,5 @@
-// src/components/StudentHeader.jsx
-import { useEffect, useState } from 'react'
-import { NavLink, useParams } from 'react-router-dom'
+import { startTransition, useEffect, useState } from 'react'
+import { NavLink, useNavigate, useParams } from 'react-router-dom'
 import {
   AppBar,
   Box,
@@ -11,6 +10,11 @@ import {
 } from '@mui/material'
 import { apiGet } from '../lib/api'
 import { colors, radii, type, dinoShadow } from '../theme/tokens'
+import { filterActiveEarnedIds } from '../lib/badgeDefinitions'
+
+const LOGO_DEFAULT = '/dinosaurs/dino-kaiju.png'
+const LOGO_KAIJU_GUARDIAN = '/dinosaurs/dino-kaiju-happy.png'
+const KAIJU_BADGE_ID = 'kaiju_six'
 
 /**
  * 導覽貼紙：與總覽膠囊／一級按鈕刻意不同
@@ -19,11 +23,29 @@ import { colors, radii, type, dinoShadow } from '../theme/tokens'
  * - hover：彈跳，不裁切
  */
 const NavItem = ({ to, label, tilt = -2 }) => {
+  const navigate = useNavigate()
   return (
     <Button
       component={NavLink}
       to={to}
-      className={({ isActive }) => (isActive ? 'active' : '')}
+      onClick={(e) => {
+        // 讓網址與畫面切換不跟恐龍動畫搶主執行緒
+        if (
+          e.defaultPrevented ||
+          e.button !== 0 ||
+          e.metaKey ||
+          e.altKey ||
+          e.ctrlKey ||
+          e.shiftKey
+        ) {
+          return
+        }
+        e.preventDefault()
+        startTransition(() => {
+          navigate(to)
+        })
+      }}
+      // React Router 會自動加上 .active；勿傳 function className（MUI 轉發會壞掉）
       disableRipple
       sx={{
         position: 'relative',
@@ -124,12 +146,19 @@ function DashTrail() {
 export default function StudentHeader() {
   const { source, hfUserId } = useParams()
   const [profile, setProfile] = useState(null)
+  const [logoSrc, setLogoSrc] = useState(LOGO_DEFAULT)
+  const [showFire, setShowFire] = useState(true)
 
   useEffect(() => {
     let cancelled = false
     Promise.resolve().then(() => {
-      if (!cancelled) setProfile(null)
+      if (!cancelled) {
+        setProfile(null)
+        setLogoSrc(LOGO_DEFAULT)
+        setShowFire(true)
+      }
     })
+
     apiGet(`/api/${source}/student/${hfUserId}/profile`)
       .then((p) => {
         if (!cancelled) setProfile(p)
@@ -137,6 +166,33 @@ export default function StudentHeader() {
       .catch(() => {
         if (!cancelled) setProfile(null)
       })
+
+    apiGet(`/api/${source}/student/${hfUserId}/badges`)
+      .then((d) => {
+        if (cancelled) return
+        const earned = filterActiveEarnedIds(
+          d?.badge?.earnedIds,
+          d?.badgeDefinitions,
+        )
+        const hasKaiju = earned.includes(KAIJU_BADGE_ID)
+        if (!hasKaiju) {
+          setLogoSrc(LOGO_DEFAULT)
+          setShowFire(true)
+          return
+        }
+        const def = (d?.badgeDefinitions || []).find(
+          (b) => b?.id === KAIJU_BADGE_ID,
+        )
+        setLogoSrc(def?.iconUrl || LOGO_KAIJU_GUARDIAN)
+        setShowFire(false)
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setLogoSrc(LOGO_DEFAULT)
+          setShowFire(true)
+        }
+      })
+
     return () => {
       cancelled = true
     }
@@ -149,7 +205,7 @@ export default function StudentHeader() {
 
   return (
     <AppBar
-      position='sticky'
+      position='relative'
       elevation={0}
       sx={{
         color: colors.ink,
@@ -261,7 +317,7 @@ export default function StudentHeader() {
               <Box
                 className='dino-logo'
                 component='img'
-                src='/dinosaurs/dino-kaiju.png'
+                src={logoSrc}
                 alt=''
                 sx={{
                   position: 'relative',
@@ -274,7 +330,8 @@ export default function StudentHeader() {
                 }}
               />
 
-              {/* 火焰錨點：對齊張開的嘴巴，再向左噴出 */}
+              {/* 火焰錨點：對齊張開的嘴巴，再向左噴出（進階守護龍圖不噴火） */}
+              {showFire ? (
               <Box
                 aria-hidden
                 sx={{
@@ -350,6 +407,7 @@ export default function StudentHeader() {
                   />
                 ))}
               </Box>
+              ) : null}
             </Box>
             <Box>
               <Typography
