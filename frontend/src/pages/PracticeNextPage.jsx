@@ -24,6 +24,7 @@ import {
 } from '../lib/levelDisplay'
 import {
   aggregateWeaknesses,
+  buildEffectiveRoundMap,
   flattenRatedAssistants,
   flattenRecentPractice,
   SRL_GOAL_ROOMS,
@@ -35,6 +36,7 @@ import {
   summarizeAdvancedFitProgress,
   summarizeRollingAdvancedProgress,
   summarizeFit,
+  withEffectiveRound,
 } from '../lib/practiceRecommend'
 import {
   tone,
@@ -149,14 +151,14 @@ const DINO_GUIDES = [DINO.observe, DINO.plan, DINO.act]
 function buildMonitorBriefing({ count, goal, met, fixed, primaryTier }) {
   if (met) {
     return fixed
-      ? `觀察｜太棒了！${goal} 個聊天室都符合進階了。之後可複習弱點，把表現練得更穩。`
-      : `觀察｜太棒了！${goal} 個聊天室都到達進階了。之後可回頭精煉比較弱的情境。`
+      ? `觀察｜太棒了！已有 ${goal} 個不同主題達成「選進階＋評估≥進階＋有效對話」。之後可複習弱點，把表現練得更穩。`
+      : `觀察｜太棒了！${goal} 個聊天室都已「進階＋有效對話」完成。之後可回頭精煉比較弱的情境。`
   }
   const left = Math.max(0, goal - count)
   if (fixed) {
-    return `觀察｜目前 ${count}/${goal} 間符合進階，還差 ${left} 間。看完進度後，點「甲龍」來策劃這次要練的弱點吧。`
+    return `觀察｜目前 ${count}/${goal} 個主題（選進階＋評估≥進階＋有效對話），還差 ${left} 個。看完進度後，點「甲龍」來策劃這次要練的弱點吧。`
   }
-  return `觀察｜目前 ${count}/${goal} 間到達進階（多數在「${primaryTier}」），還差 ${left} 間。下一步點「甲龍」策劃本次目標。`
+  return `觀察｜目前 ${count}/${goal} 間已「進階＋有效對話」（多數在「${primaryTier}」），還差 ${left} 間。下一步點「甲龍」策劃本次目標。`
 }
 
 function buildPlanBriefing({ weaknesses, selectedFocuses }) {
@@ -355,7 +357,7 @@ function SectionBlock({
   )
 }
 
-function ProgressTrail({ count, goal, met }) {
+function ProgressTrail({ count, goal, met, unitLabel = '聊天室' }) {
   const slots = Array.from({ length: goal }, (_, i) => i < count)
   return (
     <Stack spacing={1.25}>
@@ -363,7 +365,11 @@ function ProgressTrail({ count, goal, met }) {
         {slots.map((filled, i) => (
           <Tooltip
             key={i}
-            title={filled ? `第 ${i + 1} 間已達進階` : `第 ${i + 1} 間還在路上`}
+            title={
+              filled
+                ? `第 ${i + 1} 個${unitLabel}已達進階`
+                : `第 ${i + 1} 個${unitLabel}還在路上`
+            }
             arrow
           >
             <Box
@@ -605,8 +611,14 @@ export default function PracticeNextPage() {
   }, [source, hfUserId])
 
   const practiceItems = useMemo(() => {
-    if (fixed) return flattenRecentPractice(data?.recentPractice)
-    return flattenRatedAssistants(data?.cefrGroups)
+    const raw = fixed
+      ? flattenRecentPractice(data?.recentPractice)
+      : flattenRatedAssistants(data?.cefrGroups)
+    const effectiveMap = buildEffectiveRoundMap(
+      data?.badge?.stats,
+      data?.badgeTopicDetails,
+    )
+    return withEffectiveRound(raw, effectiveMap)
   }, [data, fixed])
 
   const primaryTier = useMemo(() => {
@@ -634,6 +646,7 @@ export default function PracticeNextPage() {
         goal: fromApi.goal || SRL_GOAL_ROOMS,
         met: Boolean(fromApi.met),
         mode: fromApi.mode || (fixed ? 'fixed' : 'rolling'),
+        themeIds: Array.isArray(fromApi.themeIds) ? fromApi.themeIds : [],
       }
     }
     return fixed
@@ -682,8 +695,16 @@ export default function PracticeNextPage() {
       mode,
       primaryTier,
       limit: 2,
+      advancedThemeIds: fixed ? advancedProgress.themeIds : undefined,
     })
-  }, [practiceItems, submittedFocuses, mode, primaryTier, fixed])
+  }, [
+    practiceItems,
+    submittedFocuses,
+    mode,
+    primaryTier,
+    fixed,
+    advancedProgress.themeIds,
+  ])
 
   const handleToggleFocus = (tag) => {
     setSubmittedFocuses(null)
@@ -804,13 +825,13 @@ export default function PracticeNextPage() {
   }
 
   const subtitle = fixed
-    ? `請在主系統選擇「${SRL_GOAL_TIER}」練習；目標是 ${SRL_GOAL_ROOMS} 個聊天室達到「符合進階」`
-    : `目標是 ${SRL_GOAL_ROOMS} 個聊天室等級到達「${SRL_GOAL_TIER}」；依弱點選擇練習方向`
+    ? `請在主系統選擇「${SRL_GOAL_TIER}」練習；目標是 ${SRL_GOAL_ROOMS} 個不同主題各至少一次「選進階＋評估≥進階＋有效對話」`
+    : `目標是 ${SRL_GOAL_ROOMS} 個聊天室「到達進階＋完成有效對話」；依弱點選擇練習方向`
 
   const rubricTitle = '進階等級條件'
   const rubricSubtitle = fixed
-    ? `課程目標為「${SRL_GOAL_TIER}」。以下條件可對照；練習後希望系統判定為符合所選等級（in_band）。`
-    : `課程目標為 ${SRL_GOAL_ROOMS} 個聊天室到達「${SRL_GOAL_TIER}」。你目前多數在「${primaryTier}」；以下可作為往進階靠近的對照。`
+    ? `課程目標：${SRL_GOAL_ROOMS} 個不同 assistant；須選「${SRL_GOAL_TIER}」、評估達進階以上，且完成有效對話（每個 assistant 最多算 1 次）。`
+    : `課程目標為 ${SRL_GOAL_ROOMS} 個聊天室到達「${SRL_GOAL_TIER}」並完成有效對話。你目前多數在「${primaryTier}」；以下可作為往進階靠近的對照。`
 
   return (
     <Box
@@ -1118,8 +1139,8 @@ export default function PracticeNextPage() {
               title={fixed ? '符合進階進度' : '到達進階進度'}
               hint={
                 fixed
-                  ? `選定「${SRL_GOAL_TIER}」且符合（in_band）；目標 ${SRL_GOAL_ROOMS} 個`
-                  : `評估等級已達「${SRL_GOAL_TIER}」；目標 ${SRL_GOAL_ROOMS} 個`
+                  ? `每個 assistant 最多算 1 次「選 ${SRL_GOAL_TIER}＋評估≥進階＋有效對話」；目標 ${SRL_GOAL_ROOMS} 個`
+                  : `評估≥「${SRL_GOAL_TIER}」且完成有效對話；目標 ${SRL_GOAL_ROOMS} 個`
               }
               dinoSrc={DINO.observe.src}
               dinoMotion='fly'
@@ -1156,15 +1177,16 @@ export default function PracticeNextPage() {
                     count={advancedProgress.count}
                     goal={advancedProgress.goal}
                     met={advancedProgress.met}
+                    unitLabel={fixed ? '主題' : '聊天室'}
                   />
                   <Typography variant='body2' sx={{ color: tone.muted }}>
                     {advancedProgress.met
                       ? fixed
-                        ? '已達成課程目標：6 個聊天室符合進階。'
-                        : '已達成課程目標：6 個聊天室等級到達進階。'
-                      : fixed
-                        ? `還差 ${Math.max(0, advancedProgress.goal - advancedProgress.count)} 個聊天室符合進階。`
-                        : `還差 ${Math.max(0, advancedProgress.goal - advancedProgress.count)} 個聊天室到達進階。目前多數在「${primaryTier}」。`}
+                        ? '已達成課程目標：6 個不同主題選進階＋評估≥進階＋有效對話。'
+                        : '已達成課程目標：6 個聊天室到達進階並完成有效對話。'
+                        : fixed
+                        ? `還差 ${Math.max(0, advancedProgress.goal - advancedProgress.count)} 個不同主題（選進階＋評估≥進階＋有效對話）。`
+                        : `還差 ${Math.max(0, advancedProgress.goal - advancedProgress.count)} 個聊天室（進階＋有效對話）。目前多數在「${primaryTier}」。`}
                     {fixed && fitSummary?.total
                       ? ` 最近練習：符合 ${fitSummary.matched} · 不符合 ${fitSummary.unmatched}。`
                       : null}
@@ -1241,7 +1263,7 @@ export default function PracticeNextPage() {
                     variant='body2'
                     sx={{ color: tone.muted, mb: 1 }}
                   >
-                    點標籤可加入／取消下方勾選
+                    相近用詞已合併成類別；點標籤可加入／取消下方勾選
                   </Typography>
                   {weaknesses.length ? (
                     <Stack
@@ -1252,10 +1274,14 @@ export default function PracticeNextPage() {
                     >
                       {weaknesses.map((w) => {
                         const on = selectedFocuses.includes(w.tag)
+                        const tip = w.examples?.length
+                          ? `合併自：${w.examples.join('、')}`
+                          : undefined
                         return (
                           <Chip
                             key={w.tag}
                             clickable
+                            title={tip}
                             onClick={() => handleToggleFocus(w.tag)}
                             label={`${w.tag}（${w.count}）`}
                             variant='outlined'
@@ -1388,8 +1414,8 @@ export default function PracticeNextPage() {
               title='推薦聊天室'
               hint={
                 fixed
-                  ? '最多 2 個；優先推薦尚未符合「進階」的聊天室'
-                  : '最多 2 個；優先推薦尚未到達「進階」的聊天室'
+                  ? '最多 2 個；優先：選進階已達程度但差有效對話 → 選進階未達程度 → 已完成最後'
+                  : '最多 2 個；優先：評估≥進階但差有效對話，再推尚未進階'
               }
               dinoSrc={DINO.act.src}
               dinoMotion='bob'

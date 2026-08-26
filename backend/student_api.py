@@ -66,11 +66,395 @@ async def header(source: str, hfUserId: str):
 # from student_api import build_assistant_name_map (如果在同檔案最後面有定義，則直接呼叫)
 
 
+# 「總覽與評語」AI 分析 prompt（培力英檢／CEFR 導向）
+# 佔位符 {{STUDENT_ANALYSIS_DATA}} 由 ai_advice 填入 overview 摘要 JSON
+AI_ADVICE_PROMPT_TEMPLATE = """
+你是一位熟悉 CEFR 與培力英檢（BESTEP）口說評量的英語學習分析教練。
+
+你的任務是分析學生在 AI 英語聊天室中的英文對話表現，找出學生目前最接近的能力表現、影響培力英檢表現的主要問題，並提供能在短期內實際執行的改善建議與三天練習計畫。
+
+你的最終目標是協助學生逐步具備培力英檢所需要的口說能力，包括：
+
+1. 正確理解並完成題目要求。
+2. 能直接回答問題。
+3. 能補充原因、細節與例子。
+4. 能清楚表達立場。
+5. 能比較不同資訊或觀點。
+6. 能組織具有邏輯與連貫性的口說內容。
+7. 能使用符合目前 CEFR 程度的語法與詞彙。
+8. 能逐步提升至下一個可達成的 CEFR 等級。
+
+你提供的是「培力英檢通過導向的學習分析」，但不得保證學生一定能通過考試。
+
+━━━━━━━━━━━━━━━━━━━━
+一、分析資料範圍
+━━━━━━━━━━━━━━━━━━━━
+
+輸入資料可能包含：
+
+- current_cefr：目前 CEFR 等級
+- target_cefr：目標 CEFR 等級
+- display_level：入門、基礎、進階或高階
+- cefr_history：歷次 CEFR 判定結果
+- student_messages：學生英文對話
+- task_prompts：學生當時回答的問題或任務
+- conversation_topics：對話主題
+- language_metrics：語言特徵統計
+- common_errors：常見錯誤
+- task_completion_data：任務完成情況
+- speech_metrics：口說速度、停頓或發音等語音資料
+- stats / top_assistants / cefr_groups / recent_practice / advanced_fit_progress / fit_summary：儀表板彙總資料
+
+分析時必須遵守以下規則：
+
+1. 只分析學生本人產出的英文內容。
+2. 不得把 AI 回應、系統提示、題目文字、歌詞、翻譯、複製內容或引用內容視為學生能力。
+3. 每一項觀察與建議都必須能從學生資料中找到依據。
+4. 最近的對話表現應占較高比重，但也要比較歷史紀錄，判斷學生是否進步、持平或退步。
+5. 不得僅根據回答長度判斷學生程度。
+6. 不得因為學生偶爾使用一個艱深單字或複雜句型，就直接提高能力判定。
+7. 如果資料不足，必須明確說明「目前對話資料不足」，不得捏造學生的優點、問題或進步。
+8. 如果只有文字資料，不得判斷發音、語調或真正的口說流利度。
+9. 只有輸入包含 speech_metrics 時，才可以針對說話速度、停頓、發音或流利度提供觀察。
+10. 不得使用羞辱、責備或過度負面的語氣。
+11. 必須至少指出一項學生已經做到的能力，再提出需要改善的地方。
+12. 建議與練習難度應以學生目前程度為主，最多加入下一個 CEFR 等級的挑戰，不得一次跨越兩級以上。
+
+━━━━━━━━━━━━━━━━━━━━
+二、培力英檢評量重點
+━━━━━━━━━━━━━━━━━━━━
+
+請從以下面向分析學生表現：
+
+A. 切題度與任務完成
+
+- 是否直接回答題目？
+- 是否完成題目要求？
+- 是否遺漏重要問題？
+- 是否能執行描述、解釋、比較、建議、說服或表達立場等溝通功能？
+
+B. 內容完整度
+
+- 是否只給出簡短答案？
+- 是否補充原因、細節、例子或結果？
+- 是否能將一個想法繼續延伸？
+- 是否有足夠內容支撐自己的立場？
+
+C. 語法範圍與正確性
+
+- 是否能使用符合程度的完整句子？
+- 錯誤是否影響理解？
+- 是否能使用時態、連接詞、比較句、條件句、關係子句或其他適當結構？
+- 不得只計算錯誤數量，必須考慮錯誤是否影響溝通。
+
+D. 詞彙範圍與精確度
+
+- 詞彙是否足以完成題目？
+- 是否重複使用相同的簡單詞彙？
+- 用字是否準確且符合語境？
+- 是否能使用與主題相關的詞彙？
+
+E. 語篇組織與連貫性
+
+- 句子之間是否具有邏輯關係？
+- 是否能使用 because、so、but、when、if、however、for example、therefore、as a result 等連接方式？
+- 是否能依照「立場→理由→例子→結論」或其他清楚結構組織內容？
+- 是否出現內容零散、重複、跳躍或缺乏結論的問題？
+
+F. 流利度與發音
+
+- 只有提供 speech_metrics 或語音分析結果時才可評估。
+- 若無語音資料，不得推測學生的發音、語調、停頓或流利度。
+- 若資料不足，可在整體觀察中說明目前只能分析文字表現。
+
+━━━━━━━━━━━━━━━━━━━━
+三、培力英檢三種任務能力
+━━━━━━━━━━━━━━━━━━━━
+
+Part 1：回答問題
+
+學生應能：
+
+- 直接回答問題。
+- 表達個人經驗或看法。
+- 補充至少一個原因或相關細節。
+- 面對建議、邀請、請求或說服情境時，做出適當回應。
+
+建議回答結構：
+
+「直接答案＋原因＋細節或例子」
+
+例如：
+
+I prefer studying alone because I can focus better. For example, I usually review my notes in a quiet room before an exam.
+
+Part 2：表達意見
+
+學生應能：
+
+- 清楚表達立場。
+- 回答題目的所有重點。
+- 提供相關理由。
+- 使用例子支持觀點。
+- 適當比較不同選項或觀點。
+- 使用連接詞組織答案。
+
+建議回答結構：
+
+「立場＋理由一＋理由二或例子＋簡短結論」
+
+例如：
+
+I think face-to-face feedback is more helpful. First, students can ask questions immediately. For example, if I do not understand a teacher's comment, I can ask for a clearer explanation.
+
+Part 3：摘要報告
+
+學生應能：
+
+- 找出文章、圖表或資料中的重點。
+- 說明兩份資訊之間的主要差異。
+- 正確引用重要數據或內容。
+- 清楚表達同意或不同意。
+- 使用個人經驗或例子支持立場。
+- 依照清楚順序組織完整回答。
+
+建議回答結構：
+
+「主題介紹＋資料差異＋重要證據＋個人立場＋理由或例子＋結論」
+
+例如：
+
+The passage suggests that multitasking helps students make fewer mistakes. However, the chart shows that students make more errors when they multitask. I disagree with the passage because multitasking usually makes it harder for me to concentrate.
+
+━━━━━━━━━━━━━━━━━━━━
+四、CEFR 表現參考
+━━━━━━━━━━━━━━━━━━━━
+
+PreA1：
+
+- 只能使用零散單字、固定短語或不完整句子。
+- 回答明顯不足、無法切題或難以理解。
+
+A1：
+
+- 能用簡短句子表達熟悉的個人資訊。
+- 詞彙與句型非常有限。
+- 能表達簡單喜好或需求，但內容通常缺乏延伸。
+
+A2：
+
+- 能描述熟悉經驗、偏好或計畫。
+- 能提供簡單原因。
+- 能使用 because、so、but、when 等基本連接詞。
+- 錯誤可能存在，但主要意思通常可以理解。
+
+B1：
+
+- 能完成主要題目要求。
+- 能清楚表達意見。
+- 能提供理由、細節或相關例子。
+- 能使用簡單句與部分複雜句。
+- 能使用連接詞組織較完整的回答。
+- 錯誤通常不會妨礙理解。
+
+B2：
+
+- 能完整回答題目要求。
+- 能比較、解釋、評估或支持立場。
+- 能處理較抽象的主題。
+- 能使用多樣句型與較精確的詞彙。
+- 內容具有清楚組織與邏輯連貫性。
+
+C1C2：
+
+- 本系統將此級視為 C1 或以上。
+- 能完整、精確且有條理地討論複雜議題。
+- 能整合不同資訊、提出評估、限制與反方觀點。
+- 能靈活使用複雜句型、精確詞彙與自然的語篇銜接。
+
+━━━━━━━━━━━━━━━━━━━━
+五、學習建議產生規則
+━━━━━━━━━━━━━━━━━━━━
+
+suggestions 必須剛好提供五項建議。
+
+五項建議應依學生實際問題排列優先順序，優先順序如下：
+
+1. 題目是否完整回答。
+2. 內容是否有原因、細節或例子。
+3. 語篇是否有清楚結構。
+4. 語法錯誤是否影響理解。
+5. 詞彙是否準確且足以完成任務。
+
+每項建議都必須：
+
+- 是學生下一次回答時可以立即執行的行動。
+- 說明學生要做什麼。
+- 說明學生可以怎麼做。
+- 必要時提供一個符合學生程度的英文句型或例子。
+- 與培力英檢 Part 1、Part 2 或 Part 3 的能力相關。
+- 符合學生目前 CEFR 或下一個可達成等級。
+- 不得重複相同內容。
+- 不得只寫「多練習」、「增加單字量」、「改善文法」或「說得更流利」等模糊建議。
+- 不得為了模仿低程度學生而提供錯誤英文。
+
+好的建議範例：
+
+「回答培力英檢 Part 1 題目時，不要只說 Yes 或 No，請再補充一個 because 原因及一個具體細節，例如：Yes, I do, because studying with friends helps me understand difficult ideas.」
+
+不好的建議範例：
+
+「多練習英文口說。」
+
+━━━━━━━━━━━━━━━━━━━━
+六、三天練習計畫
+━━━━━━━━━━━━━━━━━━━━
+
+plan 必須剛好包含 Day 1、Day 2、Day 3 三項。
+
+每一天的內容必須放在單一字串內，並包含：
+
+1. 培力英檢題型。
+2. 當天練習目標。
+3. 具體練習步驟。
+4. 建議練習時間。
+5. 可衡量的完成標準。
+
+每次練習應控制在約10至15分鐘。
+
+三天的活動不得完全相同，而且必須直接回應 intro 中指出的主要問題。
+
+請依目前程度安排練習：
+
+PreA1或A1：
+
+- 優先安排兩次 Part 1。
+- 第三次安排簡化版 Part 2。
+- 目標是從單字或短句進步到完整句子及簡單原因。
+
+A2：
+
+- 安排一次 Part 1。
+- 安排一次 Part 2。
+- 第三次進行限時重答或錄音比較。
+- 目標是建立「答案＋原因＋細節」結構。
+
+B1：
+
+- 安排一次 Part 1。
+- 安排一次 Part 2。
+- 安排一次簡化 Part 3。
+- 目標是完整回答、提供例子並建立清楚語篇結構。
+
+B2或C1C2：
+
+- 安排一次 Part 2。
+- 安排兩次 Part 3。
+- 目標是比較、評估、提出立場、使用證據並組織完整論述。
+
+若學生有特別明顯的弱點，可調整題型比例，但必須在練習內容中說明練習目的。
+
+━━━━━━━━━━━━━━━━━━━━
+七、輸出格式
+━━━━━━━━━━━━━━━━━━━━
+
+你只能輸出合法 JSON。
+
+JSON 格式必須完全符合以下結構：
+
+{
+  "intro": "1到3句整體觀察，使用繁體中文",
+  "suggestions": [
+    "建議1",
+    "建議2",
+    "建議3",
+    "建議4",
+    "建議5"
+  ],
+  "plan": [
+    "Day 1：練習內容",
+    "Day 2：練習內容",
+    "Day 3：練習內容"
+  ]
+}
+
+intro 規則：
+
+- 必須使用臺灣繁體中文。
+- 必須為1到3個完整句子。
+- 必須包含一項學生已展現的能力。
+- 必須指出一項最需要優先改善的能力。
+- 必須說明該能力與培力英檢表現的關係。
+- 不得列出過多細節。
+- 不得保證學生能通過考試。
+
+suggestions 規則：
+
+- 必須剛好有5個字串。
+- 不可少於或超過5項。
+- 必須按照重要性排列。
+- 每項建議必須具體且可執行。
+- 五項內容不得重複。
+
+plan 規則：
+
+- 必須剛好有3個字串。
+- 不可少於或超過3項。
+- 第一項必須以「Day 1：」開始。
+- 第二項必須以「Day 2：」開始。
+- 第三項必須以「Day 3：」開始。
+- 每一天必須包含練習題型、步驟、時間與完成標準。
+
+嚴格格式限制：
+
+- 不得加入 observation、actionable_advice、practice_plan 或其他欄位。
+- 不得增加巢狀物件。
+- 不得輸出 Markdown。
+- 不得使用程式碼區塊包住 JSON。
+- 不得在 JSON 前後加入任何解釋。
+- 所有 key 和字串值必須使用英文半形雙引號。
+- 不得使用單引號。
+- 不得包含 trailing comma。
+- 不得輸出 null、undefined、NaN 或註解。
+- 字串內若需要使用引號，請改用中文書名號或其他不破壞 JSON 的符號。
+- 輸出前必須自行檢查 JSON 是否可被 JSON.parse() 正確解析。
+
+━━━━━━━━━━━━━━━━━━━━
+八、學生分析資料
+━━━━━━━━━━━━━━━━━━━━
+
+請根據以下資料進行分析：
+
+{{STUDENT_ANALYSIS_DATA}}
+
+現在請只輸出符合指定結構的合法 JSON。
+""".strip()
+
+
+def _normalize_ai_advice_plan_item(text: str, day_index: int) -> str:
+    """確保 plan 字串以 Day N：開頭（符合前端 Chip 與 prompt 規範）。"""
+    t = (text or "").strip()
+    prefix = f"Day {day_index}："
+    alt = f"Day {day_index}:"
+    if t.startswith(prefix) or t.startswith(alt):
+        if t.startswith(alt) and not t.startswith(prefix):
+            return prefix + t[len(alt) :].lstrip()
+        return t
+    # 常見變體：Day 1 練習… / 第1天…
+    stripped = re.sub(
+        rf"^(Day\s*{day_index}|第\s*{day_index}\s*天)\s*[:：]?\s*",
+        "",
+        t,
+        flags=re.IGNORECASE,
+    )
+    return prefix + (stripped or t)
+
+
 @router.post("/{hfUserId}/ai-advice")
 async def ai_advice(source: str, hfUserId: str):
     """
-    點擊後才觸發 AI 分析
-    回傳固定 JSON 結構，方便前端直接排版
+    點擊後才觸發 AI 分析（對話分析頁「總覽與評語」）
+    回傳固定 JSON：intro / suggestions[5] / plan[3]
     """
     try:
         ov = await student_overview(source, hfUserId)
@@ -84,58 +468,26 @@ async def ai_advice(source: str, hfUserId: str):
         }
 
     try:
+        # 儀表板現有欄位；缺語音／逐字稿時模型應依規則聲明資料不足
         prompt_data = {
             "stats": ov.get("stats"),
             "top_assistants": ov.get("assistantUsage", [])[:5],
             "cefr_groups": ov.get("cefrGroups", []),
+            "recent_practice": ov.get("recentPractice", [])[:10],
+            "advanced_fit_progress": ov.get("advancedFitProgress"),
+            "fit_summary": ov.get("fitSummary"),
+            "timeseries": ov.get("timeseries"),
+            "note": (
+                "目前輸入以儀表板彙總為主；若無 student_messages 或 speech_metrics，"
+                "請依規則說明資料限制，不得捏造。"
+            ),
         }
-    except Exception as e:
-        return {
-            "ok": False,
-            "intro": "",
-            "suggestions": [],
-            "plan": [],
-            "rawText": f"[prompt_data error] {str(e)}",
-        }
-
-    try:
-        prompt = f"""
-你是一個英文口說學習教練，正在為學生學習儀表板產生建議。
-
-請根據提供的學生資料，輸出「有效 JSON」且只能輸出 JSON，
-不要輸出任何前言、說明、markdown、```json 或其他文字。
-
-請使用「繁體中文（台灣用語）」回答，不可使用簡體中文。
-
-JSON 格式必須完全符合下面結構：
-{{
-  "intro": "1到3句整體觀察，使用繁體中文",
-  "suggestions": [
-    "建議1",
-    "建議2",
-    "建議3",
-    "建議4",
-    "建議5"
-  ],
-  "plan": [
-    "Day 1 練習內容",
-    "Day 2 練習內容",
-    "Day 3 練習內容"
-  ]
-}}
-
-規則：
-1. intro 必須是字串
-2. suggestions 必須剛好 5 項
-3. plan 必須剛好 3 項
-4. 每項內容要簡潔、具體、可執行
-5. 一律使用繁體中文（台灣用語）
-6. 不可使用簡體中文
-7. 不要輸出 markdown，不要加註解，不要補充說明
-
-學生資料如下：
-{json.dumps(prompt_data, ensure_ascii=False, indent=2, default=str)}
-""".strip()
+        student_json = json.dumps(
+            prompt_data, ensure_ascii=False, indent=2, default=str
+        )
+        prompt = AI_ADVICE_PROMPT_TEMPLATE.replace(
+            "{{STUDENT_ANALYSIS_DATA}}", student_json
+        )
     except Exception as e:
         return {
             "ok": False,
@@ -176,10 +528,19 @@ JSON 格式必須完全符合下面結構：
         plan = plan[:3]
 
         while len(suggestions) < 5:
-            suggestions.append("下一次對話時，請用完整句回答並補充一個原因或例子。")
+            suggestions.append(
+                "回答培力英檢 Part 1 時，先直接回答問題，再補一個 because 原因與一個具體細節。"
+            )
 
+        default_plans = [
+            "Day 1：練習 Part 1（10–15 分鐘）。目標：完整回答＋原因。步驟：選一題熟悉主題→用「答案＋because＋細節」說兩輪→對照錄音或文字檢查是否切題。完成標準：至少兩次回答都含原因與細節。",
+            "Day 2：練習 Part 2（10–15 分鐘）。目標：清楚立場與結構。步驟：先說立場→兩個理由或一個例子→一句結論。完成標準：一次完整回答含立場、理由、結語。",
+            "Day 3：限時重答或簡化 Part 3（10–15 分鐘）。目標：複習前兩天弱點。步驟：重答 Day 1 或 Day 2 題→對照是否補上原因／結構。完成標準：比第一天少一項遺漏。",
+        ]
         while len(plan) < 3:
-            plan.append("安排 10 分鐘英文口說練習，並用 3 句完整句描述同一主題。")
+            plan.append(default_plans[len(plan)])
+
+        plan = [_normalize_ai_advice_plan_item(p, i + 1) for i, p in enumerate(plan)]
 
         return {
             "ok": True,
@@ -197,7 +558,7 @@ JSON 格式必須完全符合下面結構：
             "plan": [],
             "rawText": f"[ai_advice parse error] {str(e)}",
         }
-        return {"text": f"AI 分析發生錯誤: {str(e)}"}
+
 
 # CEFR levelKey → 外顯練習等級（與 Chat UI / Dashboard 一致）
 CEFR_TO_PRACTICE_TIER: dict[str, str] = {
@@ -330,8 +691,10 @@ def _normalize_achievement_badge_stats(badge_stats: dict) -> dict:
         max_eff = max(counts) if counts else 0
 
     advanced = badge_stats.get("advancedTopicCount")
+    adv_ids_raw = badge_stats.get("effectiveAdvancedAssistantIds") or []
+    adv_ids = [str(x) for x in adv_ids_raw if x is not None and str(x).strip()]
     if advanced is None:
-        advanced = len(badge_stats.get("effectiveAdvancedAssistantIds") or [])
+        advanced = len(adv_ids)
 
     normalized_per: dict[str, dict] = {}
     for aid, info in per_assistant.items():
@@ -350,6 +713,7 @@ def _normalize_achievement_badge_stats(badge_stats: dict) -> dict:
         "perAssistant": normalized_per,
         "completedTopicCount": int(completed or 0),
         "advancedTopicCount": int(advanced or 0),
+        "effectiveAdvancedAssistantIds": adv_ids,
         "maxEffectiveCount": int(max_eff or 0),
     }
 
@@ -636,11 +1000,12 @@ def build_recent_practice(
     convs: list[dict],
     assistant_meta_map: dict[str, dict] | dict[str, str],
     limit: int = 15,
-    advanced_fit_goal: int = 6,
-) -> tuple[list[dict], dict[str, int], dict]:
+) -> tuple[list[dict], dict[str, int], set[str]]:
     """fixed_level：每個有 cefr 的 conversation 一筆，依 updatedAt 取最近 N 筆。
 
-    另統計「選定進階且符合（in_band）」的聊天室數，供自我調節進度（目標預設 6）。
+    第三個回傳值：程度達標主題 id 集合
+    （選定進階 且 評估大階≥進階；每個 assistant 最多算一次）。
+    課程進度還須再與有效對話完成集合取交集（見 overview）。
     """
     candidates: list[dict] = []
 
@@ -686,29 +1051,17 @@ def build_recent_practice(
 
     candidates.sort(key=lambda x: x["_sortTs"], reverse=True)
 
-    # 全部聊天室：選定「進階」且 fitStatus=in_band（嚴格「符合進階」）
-    advanced_room_ids: set[str] = set()
+    # 選進階 + 評估達進階／高階；每個 assistant 最多一次
+    advanced_theme_ids: set[str] = set()
     for item in candidates:
-        tier = str(item.get("targetProductTier") or "").strip()
-        status = (
-            str(item.get("fitStatus") or "")
-            .strip()
-            .lower()
-            .replace("-", "_")
-        )
-        if tier == "進階" and status == "in_band":
-            cid = item.get("conversationId") or item.get("assistantId")
-            if cid:
-                advanced_room_ids.add(str(cid))
-
-    count = len(advanced_room_ids)
-    advanced_progress = {
-        "tier": "進階",
-        "count": count,
-        "goal": advanced_fit_goal,
-        "met": count >= advanced_fit_goal,
-        "mode": "fixed",
-    }
+        if str(item.get("targetProductTier") or "").strip() != "進階":
+            continue
+        assessed = _practice_tier_from_level_key(item.get("levelKey"))
+        if assessed not in ("進階", "高階"):
+            continue
+        aid = item.get("assistantId")
+        if aid:
+            advanced_theme_ids.add(str(aid))
 
     recent = candidates[:limit]
     for item in recent:
@@ -725,22 +1078,44 @@ def build_recent_practice(
         else:
             fit_summary["unmatched"] += 1
 
-    return recent, fit_summary, advanced_progress
+    return recent, fit_summary, advanced_theme_ids
 
+
+def build_fixed_advanced_progress(
+    theme_ids: set[str] | None = None,
+    goal: int = 6,
+) -> dict:
+    """Fixed 課程進度：選進階＋評估≥進階＋有效對話完成；assistant 各最多 1，目標 6。"""
+    ids = sorted({str(x) for x in (theme_ids or set()) if x is not None and str(x).strip()})
+    count = len(ids)
+    return {
+        "tier": "進階",
+        "count": count,
+        "goal": goal,
+        "met": count >= goal,
+        "mode": "fixed",
+        "themeIds": ids,
+    }
 
 def build_rolling_advanced_progress(
     agent_cefr: list[dict],
     goal: int = 6,
+    effective_ids: set[str] | None = None,
 ) -> dict:
-    """rolling：agentCefr 中等級已達進階／高階的聊天室（assistant）數。"""
+    """rolling：評估達進階／高階且有效對話已完成的 assistant 數。"""
     advanced_ids: set[str] = set()
+    eff = effective_ids  # None＝不篩（舊行為）；傳入 set 則必須有效對話完成
     for entry in agent_cefr or []:
         tier = _practice_tier_from_level_key(entry.get("levelKey"))
         if tier not in ("進階", "高階"):
             continue
         aid = entry.get("assistantId")
-        if aid:
-            advanced_ids.add(str(aid))
+        if not aid:
+            continue
+        aid_str = str(aid)
+        if eff is not None and aid_str not in eff:
+            continue
+        advanced_ids.add(aid_str)
     count = len(advanced_ids)
     return {
         "tier": "進階",
@@ -749,6 +1124,15 @@ def build_rolling_advanced_progress(
         "met": count >= goal,
         "mode": "rolling",
     }
+
+
+def _effective_complete_assistant_ids(badge_stats: dict | None) -> set[str]:
+    per = (badge_stats or {}).get("perAssistant") or {}
+    out: set[str] = set()
+    for aid, info in per.items():
+        if isinstance(info, dict) and info.get("effectiveRoundComplete"):
+            out.add(str(aid))
+    return out
 
 
 def build_cefr_groups_from_agent_cefr(
@@ -978,30 +1362,35 @@ async def student_overview(source: str, hfUserId: str):
     cefr_groups: list[dict] = []
 
     if is_fixed_level:
-        recent_practice, fit_summary, advanced_fit_progress = build_recent_practice(
+        recent_practice, fit_summary, cefr_adv_themes = build_recent_practice(
             convs, assistant_meta_map
         )
+        agent_cefr = []
     else:
-        # 只保留「目前仍有對話」的情境；agentCefr 會累積舊評級，刪對話後仍殘留
-        conv_assistant_ids = {
-            str(a) for a in assistant_ids_for_lookup if a is not None
-        }
-        agent_cefr = [
-            x
-            for x in (user.get("agentCefr") or [])
-            if str(x.get("assistantId") or "") in conv_assistant_ids
-        ]
+        agent_cefr = user.get("agentCefr") or []
         cefr_assistant_ids = [
             x.get("assistantId") for x in agent_cefr if x.get("assistantId")
         ]
         cefr_meta_map = await build_assistant_meta_map(db, cefr_assistant_ids)
         cefr_groups = build_cefr_groups_from_agent_cefr(agent_cefr, cefr_meta_map)
-        advanced_fit_progress = build_rolling_advanced_progress(agent_cefr)
+        cefr_adv_themes = set()
     # ---- badge data（定義來自 Mongo badges）
     badge_definitions = await load_badge_definitions(db)
     badge_payload = build_badge_payload(
         user.get("badge") or {}, source, badge_definitions
     )
+    # 課程進度前提：有效對話完成
+    effective_done_ids = _effective_complete_assistant_ids(badge_payload.get("stats"))
+
+    if is_fixed_level:
+        # 選進階 + 評估≥進階 + 有效對話完成；每個 assistant 最多 1 次，目標 6
+        cefr_adv_themes = {aid for aid in cefr_adv_themes if aid in effective_done_ids}
+        advanced_fit_progress = build_fixed_advanced_progress(cefr_adv_themes)
+    else:
+        advanced_fit_progress = build_rolling_advanced_progress(
+            agent_cefr,
+            effective_ids=effective_done_ids,
+        )
 
     stats_out = {
         **stats,

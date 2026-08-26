@@ -672,17 +672,14 @@ function CefrPieCard({ cefrGroups = [], loading }) {
                   outerRadius: 80,
                   paddingAngle: 2,
                   cornerRadius: 4,
-                  highlightScope: { faded: 'global', highlighted: 'item' },
+                  highlightScope: { fade: 'global', highlight: 'item' },
                 },
               ]}
               colors={colors}
               width={200}
               height={220}
-              slots={{ legend: () => null }}
+              hideLegend
               margin={{ top: 10, bottom: 10, left: 10, right: 10 }}
-              sx={{
-                '& .MuiChartsLegend-root': { display: 'none' },
-              }}
             />
             <Stack spacing={1.25} sx={{ minWidth: 80 }}>
               {seriesData.map((item, i) => (

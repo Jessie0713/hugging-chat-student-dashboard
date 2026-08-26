@@ -68,7 +68,7 @@ export default function PracticeFitSummaryCard({
 
   return (
     <Card variant='outlined' sx={fixedPanelSx}>
-      <CardContent sx={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
+      <CardContent sx={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
         <Typography sx={{ ...type.sectionTitle, mb: 0.25 }}>
           練習適配概況
         </Typography>
@@ -97,8 +97,9 @@ export default function PracticeFitSummaryCard({
               sx={{
                 display: 'flex',
                 justifyContent: 'center',
-                height: 200,
-                flex: 1,
+                alignItems: 'center',
+                height: 220,
+                flexShrink: 0,
               }}
             >
               <PieChart
@@ -109,11 +110,13 @@ export default function PracticeFitSummaryCard({
                     outerRadius: 80,
                     paddingAngle: 2,
                     cornerRadius: 4,
-                    highlightScope: { faded: 'global', highlighted: 'item' },
+                    highlightScope: { fade: 'global', highlight: 'item' },
                   },
                 ]}
                 colors={colors}
-                slotProps={{ legend: { hidden: true } }}
+                width={200}
+                height={200}
+                hideLegend
                 margin={{ top: 10, bottom: 10, left: 10, right: 10 }}
               />
             </Box>
@@ -121,7 +124,7 @@ export default function PracticeFitSummaryCard({
               direction='row'
               spacing={2}
               justifyContent='center'
-              sx={{ mt: 1 }}
+              sx={{ mt: 1, flexShrink: 0 }}
             >
               <Typography variant='body2' sx={{ opacity: 0.85 }}>
                 <Box
