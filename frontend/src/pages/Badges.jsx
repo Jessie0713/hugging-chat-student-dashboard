@@ -7,10 +7,12 @@ import {
   CardContent,
   Chip,
   CircularProgress,
+  Grid,
   Stack,
   Typography,
 } from '@mui/material'
 import { apiGet } from '../lib/api'
+import BadgeGradeCard from '../components/BadgeGradeCard'
 import {
   filterActiveEarnedIds,
   hydrateBadgeDefinitions,
@@ -123,12 +125,19 @@ export default function Badges() {
   )
 
   const earnedCount = slots.filter((s) => s.unlocked).length
+  const gradeEstimate = data?.badge?.gradeEstimate ?? data?.badge?.courseScore
 
   return (
     <Box>
       <Typography variant='h5' sx={{ fontWeight: 700, mb: 2 }}>
         恐龍探險獎章
       </Typography>
+
+      <Grid container spacing={2} sx={{ mb: 2 }}>
+        <Grid item xs={12} md={5}>
+          <BadgeGradeCard gradeEstimate={gradeEstimate} loading={loading} />
+        </Grid>
+      </Grid>
 
       <Card variant='outlined'>
         <CardContent>

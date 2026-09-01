@@ -18,6 +18,11 @@ import {
   keyframes,
 } from '@mui/material'
 import { apiGet } from '../lib/api'
+import { logDashboardEvent } from '../lib/dashboardLog'
+import {
+  buildChatUiPracticeUrl,
+  generatePickId,
+} from '../lib/chatUiLink'
 import {
   formatFitStatus,
   getFitStatusChipProps,
@@ -188,7 +193,7 @@ function buildActBriefing({
     return '行動｜目前沒有對應推薦。換一組弱點再試，或先回主系統多練幾次，再請「翼手龍」觀察。'
   }
   if (pickedId) {
-    return '行動｜聊天室已選好！請回主系統練習；練完再點「翼手龍」觀察進度有沒有前進。'
+    return '行動｜已開啟聊天室！請在新分頁完成練習；練完再點「翼手龍」觀察進度有沒有前進。'
   }
   return `行動｜這裡有 ${recommendations.length} 間推薦聊天室。選一間開始練，練完再回來觀察——觀察→策劃→行動，循環前進。`
 }
@@ -437,6 +442,7 @@ function RecommendationCard({ item, selected, onSelect, mode, index = 0 }) {
       ? item.conversationTitle
       : item.assistantName
   const pickId = item.conversationId || item.assistantId
+  const canOpenChat = Boolean(item.modelId && item.conversationId)
 
   return (
     <Card
@@ -538,14 +544,24 @@ function RecommendationCard({ item, selected, onSelect, mode, index = 0 }) {
           </Box>
           <Button
             variant={selected ? 'contained' : 'outlined'}
-            onClick={() => onSelect(pickId)}
+            onClick={() => onSelect(pickId, item)}
+            disabled={!canOpenChat}
             sx={{
               alignSelf: 'flex-start',
               ...(selected ? buttonPrimarySx : buttonSecondarySx),
             }}
           >
-            {selected ? '已選這個 ★' : '我選這個目標開始練習'}
+            {selected
+              ? '已選這個 ★'
+              : canOpenChat
+                ? '我選這個目標開始練習'
+                : '尚無可用聊天室'}
           </Button>
+          {!canOpenChat ? (
+            <Typography variant='caption' sx={{ color: tone.muted }}>
+              請先在 Chat UI 開啟此主題的對話，再從儀表板選擇練習。
+            </Typography>
+          ) : null}
         </Stack>
       </CardContent>
     </Card>
@@ -561,6 +577,7 @@ export default function PracticeNextPage() {
   const [selectedFocuses, setSelectedFocuses] = useState([])
   const [submittedFocuses, setSubmittedFocuses] = useState(null)
   const [pickedId, setPickedId] = useState('')
+  const [pickError, setPickError] = useState('')
   const [snackOpen, setSnackOpen] = useState(false)
   /** 目前顯示步驟：1 觀察 → 2 策劃 → 3 行動 */
   const [step, setStep] = useState(1)
@@ -572,6 +589,8 @@ export default function PracticeNextPage() {
   const [activeDino, setActiveDino] = useState('observe')
   const [wiggleId, setWiggleId] = useState(null)
   const contentRef = useRef(null)
+  const viewLoggedRef = useRef(false)
+  const shownLogKeyRef = useRef('')
 
   const fixed = isFixedLevelSource(source)
   const mode = fixed ? 'fixed' : 'rolling'
@@ -598,6 +617,8 @@ export default function PracticeNextPage() {
     setUnlockedTo(1)
     setActiveDino('observe')
     setDinoSpeech('先跟翼手龍觀察進度，再一步一步往下走。')
+    viewLoggedRef.current = false
+    shownLogKeyRef.current = ''
     apiGet(`/api/${source}/student/${hfUserId}/overview`)
       .then((d) => {
         if (!cancelled) setData(d)
@@ -706,11 +727,74 @@ export default function PracticeNextPage() {
     advancedProgress.themeIds,
   ])
 
+  // log：進入練習建議（資料就緒後一次）
+  useEffect(() => {
+    if (!data || !source || !hfUserId || viewLoggedRef.current) return
+    viewLoggedRef.current = true
+    logDashboardEvent(
+      source,
+      hfUserId,
+      'practice_next_view',
+      {
+        mode,
+        advancedCount: advancedProgress.count,
+        advancedGoal: advancedProgress.goal,
+        advancedMet: advancedProgress.met,
+      },
+      { page: 'practice-next', step: 1 },
+    )
+  }, [
+    data,
+    source,
+    hfUserId,
+    mode,
+    advancedProgress.count,
+    advancedProgress.goal,
+    advancedProgress.met,
+  ])
+
+  // log：推薦結果出現（每次 submit 一組 focuses 記一次）
+  useEffect(() => {
+    if (!source || !hfUserId) return
+    if (step !== 3 || !submittedFocuses?.length) return
+    const key = `${submittedFocuses.join('|')}::${recommendations.length}`
+    if (shownLogKeyRef.current === key) return
+    shownLogKeyRef.current = key
+    logDashboardEvent(
+      source,
+      hfUserId,
+      recommendations.length
+        ? 'practice_recommend_shown'
+        : 'practice_recommend_empty',
+      {
+        mode,
+        selectedFocuses: [...submittedFocuses],
+        recommendationCount: recommendations.length,
+        recommendations: recommendations.map((r) => ({
+          assistantId: r.assistantId || null,
+          conversationId: r.conversationId || null,
+          matchedFocus: r.matchedFocus || [],
+          levelTier: r.levelTier || null,
+          fitStatus: r.fitStatus || null,
+        })),
+      },
+      { page: 'practice-next', step: 3 },
+    )
+  }, [
+    source,
+    hfUserId,
+    step,
+    submittedFocuses,
+    recommendations,
+    mode,
+  ])
+
   const handleToggleFocus = (tag) => {
     setSubmittedFocuses(null)
     setPickedId('')
     setUnlockedTo((prev) => Math.min(prev, 2))
     if (step === 3) setStep(2)
+    shownLogKeyRef.current = ''
     setSelectedFocuses((prev) => {
       if (prev.includes(tag)) return prev.filter((t) => t !== tag)
       return [...prev, tag]
@@ -723,12 +807,35 @@ export default function PracticeNextPage() {
       buildPlanBriefing({ weaknesses, selectedFocuses }),
       'plan',
     )
+    if (source && hfUserId) {
+      logDashboardEvent(
+        source,
+        hfUserId,
+        'practice_plan_open',
+        { mode },
+        { page: 'practice-next', step: 2 },
+      )
+    }
   }
 
   const handleSubmitGoals = () => {
     if (!selectedFocuses.length) return
     setSubmittedFocuses([...selectedFocuses])
     setPickedId('')
+    shownLogKeyRef.current = ''
+    if (source && hfUserId) {
+      logDashboardEvent(
+        source,
+        hfUserId,
+        'practice_recommend_submit',
+        {
+          mode,
+          selectedFocuses: [...selectedFocuses],
+          focusCount: selectedFocuses.length,
+        },
+        { page: 'practice-next', step: 3 },
+      )
+    }
     goStep(
       3,
       `行動｜已依「${selectedFocuses.join('、')}」找到推薦。選一間聊天室開始練吧！`,
@@ -736,13 +843,70 @@ export default function PracticeNextPage() {
     )
   }
 
-  const handlePick = (id) => {
+  const handlePick = (id, itemFromCard) => {
+    const pickIndex = recommendations.findIndex(
+      (r) => (r.conversationId || r.assistantId) === id,
+    )
+    const item =
+      itemFromCard ||
+      (pickIndex >= 0 ? recommendations[pickIndex] : null)
+    const conversationId = item?.conversationId || null
+    const modelId = item?.modelId || null
+    const pickId = generatePickId()
+
+    if (!conversationId || !modelId) {
+      setPickError('此推薦尚無可用的聊天室連結，請先在 Chat UI 開啟對話。')
+      setSnackOpen(true)
+      return
+    }
+
+    const chatUrl = buildChatUiPracticeUrl({
+      modelId,
+      conversationId,
+      pickId,
+      source,
+      hfUserId,
+    })
+
+    if (!chatUrl) {
+      setPickError('無法組合 Chat UI 連結，請稍後再試。')
+      setSnackOpen(true)
+      return
+    }
+
     setPickedId(id)
+    setPickError('')
     setSnackOpen(true)
     setDinoSpeech(
-      '行動｜選好了！請回主系統練習；練完再點「翼手龍」從頭觀察進度。',
+      '行動｜已開啟聊天室！請在新分頁完成練習；練完再回來觀察進度。',
     )
     setActiveDino('act')
+
+    if (source && hfUserId) {
+      const reason = String(item?.reason || '')
+      logDashboardEvent(
+        source,
+        hfUserId,
+        'practice_room_pick',
+        {
+          pickId,
+          mode,
+          pickedId: id,
+          assistantId: item?.assistantId || null,
+          conversationId,
+          modelId,
+          assistantName: item?.assistantName || null,
+          matchedFocus: item?.matchedFocus || [],
+          selectedFocuses: submittedFocuses ? [...submittedFocuses] : [],
+          reason: reason.slice(0, 200),
+          pickIndex: pickIndex >= 0 ? pickIndex : null,
+          chatUrl,
+        },
+        { page: 'practice-next', step: 3 },
+      )
+    }
+
+    window.open(chatUrl, '_blank', 'noopener,noreferrer')
   }
 
   const handleDinoTap = (dino) => {
@@ -795,6 +959,15 @@ export default function PracticeNextPage() {
         }),
         'plan',
       )
+      if (source && hfUserId) {
+        logDashboardEvent(
+          source,
+          hfUserId,
+          'practice_plan_open',
+          { mode, via: 'dino' },
+          { page: 'practice-next', step: 2 },
+        )
+      }
       return
     }
 
@@ -1182,8 +1355,8 @@ export default function PracticeNextPage() {
                   <Typography variant='body2' sx={{ color: tone.muted }}>
                     {advancedProgress.met
                       ? fixed
-                        ? '已達成課程目標：6 個不同主題選進階＋評估≥進階＋有效對話。'
-                        : '已達成課程目標：6 個聊天室到達進階並完成有效對話。'
+                        ? `已達成課程目標：${SRL_GOAL_ROOMS} 個不同主題選進階＋評估≥進階＋有效對話。`
+                        : `已達成課程目標：${SRL_GOAL_ROOMS} 個聊天室到達進階並完成有效對話。`
                         : fixed
                         ? `還差 ${Math.max(0, advancedProgress.goal - advancedProgress.count)} 個不同主題（選進階＋評估≥進階＋有效對話）。`
                         : `還差 ${Math.max(0, advancedProgress.goal - advancedProgress.count)} 個聊天室（進階＋有效對話）。目前多數在「${primaryTier}」。`}
@@ -1481,12 +1654,17 @@ export default function PracticeNextPage() {
         anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
       >
         <Alert
-          severity='success'
+          severity={pickError ? 'warning' : 'success'}
           variant='filled'
           onClose={() => setSnackOpen(false)}
-          sx={{ borderRadius: `${radii.md}px`, fontWeight: 700, bgcolor: colors.leaf }}
+          sx={{
+            borderRadius: `${radii.md}px`,
+            fontWeight: 700,
+            ...(pickError ? {} : { bgcolor: colors.leaf }),
+          }}
         >
-          已選擇此練習目標。請至主系統對應聊天室開始練習。
+          {pickError ||
+            '已開啟 Chat UI 聊天室，請在新分頁完成練習。'}
         </Alert>
       </Snackbar>
     </Box>

@@ -42,6 +42,7 @@ import { useTheme } from '@mui/material/styles'
 import { apiGet } from '../lib/api'
 import PracticeFitSummaryCard from '../components/PracticeFitSummaryCard'
 import MyPracticePanel from '../components/MyPracticePanel'
+import { BadgeGradeSummary } from '../components/BadgeGradeCard'
 import {
   filterActiveEarnedIds,
   hasLegacyEarnedIds,
@@ -284,7 +285,7 @@ function levelAxisTickFormat(v) {
   const n = Math.round(Number(v))
   if (Number.isNaN(n)) return ''
   if (n <= 0) return '入門'
-  if (n <= 2) return '基礎'
+  if (n <= 3) return '基礎'
   if (n <= 4) return '進階'
   return '高階'
 }
@@ -860,6 +861,7 @@ function BadgeAccordionPanel({
   earnedIds = [],
   legacyEarnedIds = [],
   badgeDefinitions,
+  gradeEstimate,
   loading,
 }) {
   const [filter, setFilter] = useState('all')
@@ -900,21 +902,14 @@ function BadgeAccordionPanel({
             flexWrap='wrap'
             useFlexGap
           >
-            <Box>
+            <Box sx={{mb: 1}}>
               <Typography sx={type.sectionTitle}>
                 徽章總覽
               </Typography>
               <Typography sx={type.subtitle}>
                 恐龍探險獎章 · 已獲得 {earnedCount} / {totalCount}
               </Typography>
-              {showLegacyNote ? (
-                <Typography
-                  variant='caption'
-                  sx={{ opacity: 0.55, display: 'block', mt: 0.25 }}
-                >
-                  帳號含舊版獎章紀錄，已自動對應現行恐龍獎章
-                </Typography>
-              ) : null}
+        
             </Box>
 
             <ToggleButtonGroup
@@ -923,7 +918,9 @@ function BadgeAccordionPanel({
               exclusive
               onChange={(_, v) => v && setFilter(v)}
               sx={{
-                gap: 0.75,
+                gap: 0.5,
+                flexWrap: 'wrap',
+                justifyContent: 'flex-end',
                 '& .MuiToggleButtonGroup-grouped': {
                   borderRadius: `${radii.btn}px !important`,
                   border: '1px solid !important',
@@ -932,10 +929,11 @@ function BadgeAccordionPanel({
                 },
                 '& .MuiToggleButton-root': {
                   color: 'primary.main',
-                  fontSize: '0.75rem',
+                  fontSize: '0.72rem',
                   fontWeight: 700,
                   py: 0.5,
-                  width: 60,
+                  px: 1,
+                  minWidth: 52,
                   '&:hover': { bgcolor: 'action.hover' },
                 },
                 '& .MuiToggleButton-root.Mui-selected': {
@@ -948,10 +946,18 @@ function BadgeAccordionPanel({
               <ToggleButton value='all'>全部</ToggleButton>
               <ToggleButton value='earned'>已獲得</ToggleButton>
               <ToggleButton value='locked'>未獲得</ToggleButton>
+              <ToggleButton value='grade'>成績</ToggleButton>
             </ToggleButtonGroup>
           </Stack>
 
-          {loading ? (
+          {filter === 'grade' ? (
+            <BadgeGradeSummary
+              gradeEstimate={gradeEstimate}
+              loading={loading}
+              compact
+              showTitle
+            />
+          ) : loading ? (
             <Box sx={{ py: 6, display: 'grid', placeItems: 'center' }}>
               <CircularProgress />
             </Box>
@@ -1462,6 +1468,7 @@ export default function Overview({
 
   const stats = data?.stats ?? {}
   const badgeStats = data?.badge?.stats ?? {}
+  const gradeEstimate = data?.badge?.gradeEstimate ?? data?.badge?.courseScore
   const mongoUserId = data?.mongoUserId || ''
   const earnedBadgeIds = data?.badge?.earnedIds ?? []
   const legacyBadgeIds = data?.badge?.legacyEarnedIds ?? []
@@ -1597,9 +1604,9 @@ export default function Overview({
         </Grid>
       </Grid>
 
-      {/* 2. 第二列：三個圖表 */}
+      {/* 2. 第二列：三格並排 */}
       <Grid container spacing={2} sx={{ mb: 2 }}>
-        {/* 圖表 A: 學習趨勢 (包含 4 個 Tabs) */}
+        {/* 圖表 A: 學習趨勢 */}
         <Grid item size={{ xs: 12, md: 4 }}>
           <Card variant='outlined' sx={fixedPanelSx}>
             <CardContent sx={fixedContentSx}>
@@ -1738,13 +1745,14 @@ export default function Overview({
           )}
         </Grid>
 
-        {/* 圖表 C: 徽章總覽 */}
+        {/* 圖表 C: 徽章總覽（含成績分頁） */}
         <Grid item size={{ xs: 12, md: 4 }}>
           <BadgeAccordionPanel
             stats={badgeStats}
             earnedIds={earnedBadgeIds}
             legacyEarnedIds={legacyBadgeIds}
             badgeDefinitions={badgeDefinitions}
+            gradeEstimate={gradeEstimate}
             loading={loading}
           />
         </Grid>

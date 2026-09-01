@@ -1,13 +1,23 @@
-import { Outlet, useLocation } from 'react-router-dom'
+import { Outlet, useLocation, useParams } from 'react-router-dom'
 import { Container, Box } from '@mui/material'
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import Header from '../components/Header'
 import AmbientDinoScheduler from '../components/AmbientDinoScheduler'
 import HabitatBackground from '../components/HabitatBackground'
 import { invalidateAmbientContentCache } from '../lib/ambientContentFade'
+import { logDashboardEvent } from '../lib/dashboardLog'
+
+const PAGE_BY_SEGMENT = {
+  overview: 'overview',
+  conversations: 'conversations',
+  badges: 'badges',
+  'practice-next': 'practice-next',
+}
 
 export default function StudentLayout() {
   const { pathname } = useLocation()
+  const { source, hfUserId } = useParams()
+  const lastViewKeyRef = useRef('')
 
   useEffect(() => {
     const bump = () => invalidateAmbientContentCache()
@@ -19,6 +29,24 @@ export default function StudentLayout() {
       window.removeEventListener('resize', bump)
     }
   }, [pathname])
+
+  useEffect(() => {
+    if (!source || !hfUserId) return
+    const segment = pathname.split('/').filter(Boolean).pop() || 'overview'
+    // 練習建議頁由 PracticeNextPage 記 practice_next_view，避免重複計次
+    if (segment === 'practice-next') return
+    const page = PAGE_BY_SEGMENT[segment] || segment
+    const viewKey = `${page}::${pathname}`
+    if (lastViewKeyRef.current === viewKey) return
+    lastViewKeyRef.current = viewKey
+    logDashboardEvent(
+      source,
+      hfUserId,
+      'dashboard_view',
+      { path: pathname, segment },
+      { page },
+    )
+  }, [pathname, source, hfUserId])
 
   return (
     <Box

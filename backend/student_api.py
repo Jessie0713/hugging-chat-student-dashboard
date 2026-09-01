@@ -3,17 +3,37 @@ from __future__ import annotations
 
 import os
 import re
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from collections import Counter, defaultdict
 from typing import Any
 import json
 from fastapi import APIRouter, HTTPException, Query
 from bson import ObjectId
+from pydantic import BaseModel, Field
 
 from mongo_db import get_db_by_source, normalize_source
 from db import fetch_one  # 你已經有 Moodle 的連線工具
 from azure_openai import azure_chat
+from course_score import (
+    DASHBOARD_ENTER_EVENT,
+    DASHBOARD_PICK_EVENT,
+    DASHBOARD_USAGE_WINDOW_HOURS,
+    DASHBOARD_VIEW_EVENTS,
+    DEFAULT_BADGE_DEFINITIONS,
+    compute_course_score,
+    compute_earned_badge_ids,
+    is_level_advanced,
+)
 router = APIRouter(prefix="/api/{source}/student", tags=["student"])
+
+
+class DashboardEventIn(BaseModel):
+    event: str = Field(..., min_length=1, max_length=120)
+    sessionId: str | None = Field(default=None, max_length=80)
+    page: str | None = Field(default=None, max_length=80)
+    step: int | None = None
+    payload: dict[str, Any] | None = None
+
 def normalize_hf_user_id(hf_user_id: str) -> str:
     return (hf_user_id or "").strip()
 
@@ -58,6 +78,49 @@ async def header(source: str, hfUserId: str):
         "conversationCount": conv_count,
         "latestConversationAt": latest_updated_at,
     }
+
+
+@router.post("/{hfUserId}/events")
+async def log_dashboard_event(source: str, hfUserId: str, body: DashboardEventIn):
+    """
+    Dashboard 使用事件（練習建議漏斗等）。
+    寫入失敗不應影響前端流程；此端點盡量回 ok。
+    """
+    try:
+        db = get_db_by_source(source)
+        user = await find_user_by_hf_user_id(db, hfUserId)
+        if not user:
+            return {"ok": False, "error": "user_not_found"}
+
+        event = (body.event or "").strip()
+        if not event:
+            return {"ok": False, "error": "empty_event"}
+
+        payload = body.payload if isinstance(body.payload, dict) else {}
+        # 避免單筆過大
+        try:
+            raw = json.dumps(payload, ensure_ascii=False, default=str)
+            if len(raw) > 20000:
+                payload = {"_truncated": True, "preview": raw[:2000]}
+        except Exception:
+            payload = {}
+
+        doc = {
+            "ts": datetime.now(timezone.utc),
+            "event": event,
+            "source": normalize_source(source),
+            "hfUserId": normalize_hf_user_id(hfUserId),
+            "mongoUserId": str(user["_id"]),
+            "sessionId": (body.sessionId or "").strip() or None,
+            "page": (body.page or "").strip() or None,
+            "step": body.step,
+            "payload": payload,
+        }
+        await db["dashboard_events"].insert_one(doc)
+        return {"ok": True}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
 
 # backend/student_api.py (Partial Update)
 
@@ -565,7 +628,7 @@ CEFR_TO_PRACTICE_TIER: dict[str, str] = {
     "PreA1": "入門",
     "A1": "基礎",
     "A2": "基礎",
-    "B1": "進階",
+    "B1": "基礎",
     "B2": "進階",
     "C1": "高階",
     "C2": "高階",
@@ -642,10 +705,22 @@ async def load_badge_definitions(db) -> list[dict]:
                 "sortOrder": int(doc.get("sortOrder") or 0),
                 "enabled": doc.get("enabled") is not False,
                 "phase": doc.get("phase"),
+                "meta": doc.get("meta") if isinstance(doc.get("meta"), dict) else {},
+                "gradeNote": doc.get("gradeNote"),
             }
         )
     defs.sort(key=lambda d: d.get("sortOrder") or 0)
     return defs
+
+
+def resolve_badge_definitions(mongo_defs: list[dict]) -> list[dict]:
+    """Mongo 無新制 id 時改用內建定義。"""
+    if not mongo_defs:
+        return list(DEFAULT_BADGE_DEFINITIONS)
+    ids = {d.get("id") for d in mongo_defs if isinstance(d.get("id"), str)}
+    if "milestone_topics_2" in ids or "milestone_topics_8" in ids:
+        return mongo_defs
+    return list(DEFAULT_BADGE_DEFINITIONS)
 
 
 def _practice_tier_from_level_key(level_key: str | None) -> str | None:
@@ -718,31 +793,109 @@ def _normalize_achievement_badge_stats(badge_stats: dict) -> dict:
     }
 
 
-def compute_grade_estimate(stats: dict, earned_ids: list) -> dict:
-    """對齊恐龍獎章門檻：5→及格、8→優秀、10→滿分；進階 6 題。"""
-    earned = set(earned_ids or [])
-    completed = int(stats.get("completedTopicCount") or 0)
-    advanced = int(stats.get("advancedTopicCount") or 0)
+async def count_dashboard_views(db, hf_user_id: str) -> int:
+    """儀表板查看次數（含練習建議頁 practice_next_view）。"""
+    try:
+        return await db["dashboard_events"].count_documents(
+            {
+                "hfUserId": normalize_hf_user_id(hf_user_id),
+                "event": {"$in": list(DASHBOARD_VIEW_EVENTS)},
+            }
+        )
+    except Exception:
+        return 0
 
-    score = None
-    score_label = "尚未達標"
-    badge_id = None
 
-    if "rex_ten" in earned or completed >= 10:
-        score, score_label, badge_id = 100, "滿分", "rex_ten"
-    elif "armor_ready" in earned or completed >= 8:
-        score, score_label, badge_id = 85, "優秀", "armor_ready"
-    elif "trail_five" in earned or completed >= 5:
-        score, score_label, badge_id = 65, "及格線", "trail_five"
+async def count_dashboard_usage(db, hf_user_id: str) -> int:
+    """依練習建議完成練習：practice_room_pick 與 practice_room_enter 在窗口內配對。"""
+    hf = normalize_hf_user_id(hf_user_id)
+    window = timedelta(hours=DASHBOARD_USAGE_WINDOW_HOURS)
+    try:
+        cursor = db["dashboard_events"].find(
+            {
+                "hfUserId": hf,
+                "event": {"$in": [DASHBOARD_PICK_EVENT, DASHBOARD_ENTER_EVENT]},
+            },
+            {"event": 1, "ts": 1, "payload": 1},
+        ).sort([("ts", 1)])
+        docs = await cursor.to_list(length=10000)
+    except Exception:
+        return 0
 
-    return {
-        "score": score,
-        "scoreLabel": score_label,
-        "badgeId": badge_id,
-        "completedTopicCount": completed,
-        "advancedTopicCount": advanced,
-        "levelRequirementMet": "kaiju_six" in earned or advanced >= 6,
-    }
+    picks: list[dict] = []
+    enters: list[dict] = []
+    for doc in docs:
+        ev = doc.get("event")
+        payload = doc.get("payload") if isinstance(doc.get("payload"), dict) else {}
+        ts = doc.get("ts")
+        if ev == DASHBOARD_PICK_EVENT:
+            picks.append({
+                "ts": ts,
+                "pickId": (payload.get("pickId") or "").strip() or None,
+                "conversationId": (payload.get("conversationId") or "").strip() or None,
+            })
+        elif ev == DASHBOARD_ENTER_EVENT:
+            enters.append({
+                "ts": ts,
+                "pickId": (payload.get("pickId") or "").strip() or None,
+                "conversationId": (payload.get("conversationId") or "").strip() or None,
+            })
+
+    used_enters: set[int] = set()
+    matched = 0
+    for pick in picks:
+        pick_ts = pick.get("ts")
+        if not isinstance(pick_ts, datetime):
+            continue
+        for idx, ent in enumerate(enters):
+            if idx in used_enters:
+                continue
+            ent_ts = ent.get("ts")
+            if not isinstance(ent_ts, datetime):
+                continue
+            delta = ent_ts - pick_ts
+            if delta < timedelta(0) or delta > window:
+                continue
+            if pick["pickId"] and ent["pickId"] and pick["pickId"] == ent["pickId"]:
+                used_enters.add(idx)
+                matched += 1
+                break
+            if (
+                pick["conversationId"]
+                and ent["conversationId"]
+                and pick["conversationId"] == ent["conversationId"]
+            ):
+                used_enters.add(idx)
+                matched += 1
+                break
+    return matched
+
+
+async def count_second_advanced_assistants(db, user_oid: ObjectId) -> int:
+    """第二次評級達進階（B2+）的 assistant 數。"""
+    try:
+        cursor = db["cefrEvents"].find(
+            {"userId": user_oid},
+            {"assistantId": 1, "levelKey": 1, "createdAt": 1},
+        ).sort([("createdAt", 1)])
+        docs = await cursor.to_list(length=50000)
+    except Exception:
+        return 0
+
+    by_assistant: dict[str, list[str | None]] = defaultdict(list)
+    for doc in docs:
+        aid = doc.get("assistantId")
+        if aid is None:
+            continue
+        by_assistant[str(aid)].append(doc.get("levelKey"))
+
+    count = 0
+    for ratings in by_assistant.values():
+        if len(ratings) < 2:
+            continue
+        if is_level_advanced(ratings[1]):
+            count += 1
+    return count
 
 
 async def build_badge_topic_details(
@@ -785,53 +938,75 @@ async def build_badge_topic_details(
     return details
 
 
-def build_badge_payload(
+async def build_badge_payload(
+    db,
+    user: dict,
     badge: dict,
+    hf_user_id: str,
     source: str,
     definitions: list[dict] | None = None,
 ) -> dict:
-    """Normalize users.badge；earnedIds 對齊 Mongo `badges.id`（含舊 id remap）。"""
+    """Normalize users.badge；新制成績與 computed earnedIds。"""
     badge_stats = badge.get("stats") or {}
     earned_raw = badge.get("earnedIds") or []
-    earned_ids = earned_raw if isinstance(earned_raw, list) else []
+    stored_earned = earned_raw if isinstance(earned_raw, list) else []
     inbox = badge.get("inbox") or []
 
     stats = _normalize_achievement_badge_stats(badge_stats)
-    remapped = remap_legacy_badge_ids(earned_ids)
+    hf_user_id = normalize_hf_user_id(hf_user_id)
 
-    active_ids = {
-        d["id"] for d in (definitions or []) if isinstance(d.get("id"), str)
+    dashboard_usage = await count_dashboard_usage(db, hf_user_id)
+    second_advanced = await count_second_advanced_assistants(db, user["_id"])
+    completed_topics = int(stats.get("completedTopicCount") or 0)
+
+    stats = {
+        **stats,
+        "dashboardUsageCount": dashboard_usage,
+        "dashboardViewCount": dashboard_usage,
+        "secondAdvancedCount": second_advanced,
     }
-    if active_ids:
-        active_earned = [e for e in remapped if e in active_ids]
-        legacy_earned = [
-            e
-            for e in earned_ids
-            if isinstance(e, str)
-            and (
-                e in LEGACY_HABIT_BADGE_IDS
-                or e in LEGACY_BADGE_ID_MAP
-                or e not in active_ids
-            )
-        ]
-    else:
-        # DB 尚無 badges 時：回傳 remap 後全部，避免全空
-        active_earned = remapped
-        legacy_earned = [
-            e
-            for e in earned_ids
-            if isinstance(e, str)
-            and (e in LEGACY_HABIT_BADGE_IDS or e in LEGACY_BADGE_ID_MAP)
-        ]
 
-    payload = {
-        "earnedIds": active_earned,
+    defs = definitions if definitions else DEFAULT_BADGE_DEFINITIONS
+    if not defs:
+        defs = DEFAULT_BADGE_DEFINITIONS
+
+    computed_earned = compute_earned_badge_ids(
+        stats,
+        completed_topics,
+        dashboard_usage,
+        second_advanced,
+        defs,
+    )
+
+    remapped_stored = remap_legacy_badge_ids(stored_earned)
+    active_ids = {d["id"] for d in defs if isinstance(d.get("id"), str)}
+
+    legacy_earned = [
+        e
+        for e in stored_earned
+        if isinstance(e, str)
+        and (
+            e in LEGACY_HABIT_BADGE_IDS
+            or e in LEGACY_BADGE_ID_MAP
+            or (active_ids and e not in active_ids)
+        )
+    ]
+
+    grade = compute_course_score(
+        completed_topics,
+        dashboard_usage,
+        second_advanced,
+    )
+
+    return {
+        "earnedIds": computed_earned,
+        "storedEarnedIds": remapped_stored,
         "legacyEarnedIds": legacy_earned,
         "inbox": inbox if isinstance(inbox, list) else [],
         "stats": stats,
-        "gradeEstimate": compute_grade_estimate(stats, active_earned),
+        "gradeEstimate": grade,
+        "courseScore": grade,
     }
-    return payload
 
 
 @router.get("/{hfUserId}/badges")
@@ -841,9 +1016,9 @@ async def badges(source: str, hfUserId: str):
     if not user:
         raise HTTPException(status_code=404, detail="User not found in Mongo users")
 
-    definitions = await load_badge_definitions(db)
-    badge_payload = build_badge_payload(
-        user.get("badge") or {}, source, definitions
+    definitions = resolve_badge_definitions(await load_badge_definitions(db))
+    badge_payload = await build_badge_payload(
+        db, user, user.get("badge") or {}, hfUserId, source, definitions
     )
     topic_details = await build_badge_topic_details(
         db, user, badge_payload["stats"]
@@ -957,6 +1132,28 @@ async def build_assistant_name_map(db, assistant_ids: list[Any]) -> dict[str, st
     return {aid: info.get("name") or "Unnamed" for aid, info in meta.items()}
 
 
+async def build_conversation_model_map(db, conversation_ids: list[str]) -> dict[str, str]:
+    obj_ids: list[ObjectId] = []
+    for cid in conversation_ids:
+        try:
+            obj_ids.append(ObjectId(str(cid)))
+        except Exception:
+            pass
+    if not obj_ids:
+        return {}
+
+    out: dict[str, str] = {}
+    cursor = db["conversations"].find(
+        {"_id": {"$in": obj_ids}},
+        {"model": 1},
+    )
+    async for doc in cursor:
+        model = (doc.get("model") or "").strip()
+        if model:
+            out[str(doc["_id"])] = model
+    return out
+
+
 async def build_assistant_meta_map(db, assistant_ids: list[Any]) -> dict[str, dict]:
     obj_ids: list[ObjectId] = []
     for a in assistant_ids:
@@ -974,13 +1171,14 @@ async def build_assistant_meta_map(db, assistant_ids: list[Any]) -> dict[str, di
     m: dict[str, dict] = {}
     cursor = db["assistants"].find(
         {"_id": {"$in": obj_ids}},
-        {"name": 1, "description": 1},
+        {"name": 1, "description": 1, "modelId": 1},
     )
     async for doc in cursor:
         aid = str(doc["_id"])
         m[aid] = {
             "name": doc.get("name") or "Unnamed",
             "description": (doc.get("description") or "").strip(),
+            "modelId": (doc.get("modelId") or "").strip() or None,
         }
     return m
 
@@ -1025,9 +1223,11 @@ def build_recent_practice(
         if isinstance(meta, dict):
             assistant_name = meta.get("name") or aid_str
             assistant_description = meta.get("description") or ""
+            assistant_model = meta.get("modelId")
         else:
             assistant_name = meta or aid_str
             assistant_description = ""
+            assistant_model = None
 
         candidates.append({
             "conversationId": str(conv["_id"]),
@@ -1035,6 +1235,7 @@ def build_recent_practice(
             "assistantName": assistant_name,
             "assistantDescription": assistant_description,
             "conversationTitle": title or None,
+            "modelId": (conv.get("model") or "").strip() or assistant_model or None,
             "targetProductTier": cefr.get("targetProductTier"),
             "targetBandLow": cefr.get("targetBandLow"),
             "targetBandHigh": cefr.get("targetBandHigh"),
@@ -1083,9 +1284,9 @@ def build_recent_practice(
 
 def build_fixed_advanced_progress(
     theme_ids: set[str] | None = None,
-    goal: int = 6,
+    goal: int = 5,
 ) -> dict:
-    """Fixed 課程進度：選進階＋評估≥進階＋有效對話完成；assistant 各最多 1，目標 6。"""
+    """Fixed 課程進度：選進階＋評估≥進階＋有效對話完成；assistant 各最多 1，目標 5。"""
     ids = sorted({str(x) for x in (theme_ids or set()) if x is not None and str(x).strip()})
     count = len(ids)
     return {
@@ -1099,7 +1300,7 @@ def build_fixed_advanced_progress(
 
 def build_rolling_advanced_progress(
     agent_cefr: list[dict],
-    goal: int = 6,
+    goal: int = 5,
     effective_ids: set[str] | None = None,
 ) -> dict:
     """rolling：評估達進階／高階且有效對話已完成的 assistant 數。"""
@@ -1138,17 +1339,25 @@ def _effective_complete_assistant_ids(badge_stats: dict | None) -> set[str]:
 def build_cefr_groups_from_agent_cefr(
     agent_cefr: list[dict],
     cefr_meta_map: dict[str, dict],
+    conversation_model_map: dict[str, str] | None = None,
 ) -> list[dict]:
+    conv_models = conversation_model_map or {}
     groups: dict[str, list[dict]] = defaultdict(list)
     for x in agent_cefr:
         level = (x.get("levelKey") or "Unknown").strip()
         aid = x.get("assistantId")
         aid_str = str(aid) if aid is not None else ""
         meta = cefr_meta_map.get(aid_str, {})
+        conv_id = x.get("activeCefrConversationId")
+        conv_id_str = str(conv_id).strip() if conv_id else ""
+        model_id = conv_models.get(conv_id_str) or meta.get("modelId") or None
         groups[level].append({
             "assistantId": aid_str,
             "assistantName": meta.get("name") or aid_str,
             "assistantDescription": meta.get("description") or "",
+            "activeCefrConversationId": conv_id_str or None,
+            "conversationId": conv_id_str or None,
+            "modelId": model_id,
             "levelKey": x.get("levelKey"),
             "nextLevelKey": x.get("nextLevelKey"),
             "confidence": x.get("confidence"),
@@ -1172,6 +1381,8 @@ def build_cefr_groups_from_agent_cefr(
 
 # ----------------------------
 # Metrics: 英文佔比 / 詞彙豐富度
+# 英文佔比 = 英文字母 / (英文字母 + 漢字)；標點、空白、數字不計入。
+# 呼叫端應只傳入使用者訊息內容。
 # ----------------------------
 _RE_EN = re.compile(r"[A-Za-z]")
 _RE_HAN = re.compile(r"[\u4e00-\u9fff]")
@@ -1293,7 +1504,8 @@ async def student_overview(source: str, hfUserId: str):
         duration_list.append(active_duration_min)
 
         for m in msgs:
-            if m.get("from") in ("user", "assistant"):
+            # 英文佔比／詞彙豐富度：只計使用者回應
+            if m.get("from") == "user":
                 content = m.get("content") or ""
                 if content.strip():
                     all_text_parts.append(content)
@@ -1337,7 +1549,7 @@ async def student_overview(source: str, hfUserId: str):
             )
 
             for m in msgs:
-                if m.get("from") in ("user", "assistant"):
+                if m.get("from") == "user":
                     t = (m.get("content") or "").strip()
                     if t:
                         subset_text_parts.append(t)
@@ -1372,18 +1584,26 @@ async def student_overview(source: str, hfUserId: str):
             x.get("assistantId") for x in agent_cefr if x.get("assistantId")
         ]
         cefr_meta_map = await build_assistant_meta_map(db, cefr_assistant_ids)
-        cefr_groups = build_cefr_groups_from_agent_cefr(agent_cefr, cefr_meta_map)
+        conv_ids = [
+            str(x.get("activeCefrConversationId"))
+            for x in agent_cefr
+            if x.get("activeCefrConversationId")
+        ]
+        conv_model_map = await build_conversation_model_map(db, conv_ids)
+        cefr_groups = build_cefr_groups_from_agent_cefr(
+            agent_cefr, cefr_meta_map, conv_model_map
+        )
         cefr_adv_themes = set()
     # ---- badge data（定義來自 Mongo badges）
-    badge_definitions = await load_badge_definitions(db)
-    badge_payload = build_badge_payload(
-        user.get("badge") or {}, source, badge_definitions
+    badge_definitions = resolve_badge_definitions(await load_badge_definitions(db))
+    badge_payload = await build_badge_payload(
+        db, user, user.get("badge") or {}, hfUserId, source, badge_definitions
     )
     # 課程進度前提：有效對話完成
     effective_done_ids = _effective_complete_assistant_ids(badge_payload.get("stats"))
 
     if is_fixed_level:
-        # 選進階 + 評估≥進階 + 有效對話完成；每個 assistant 最多 1 次，目標 6
+        # 選進階 + 評估≥進階 + 有效對話完成；每個 assistant 最多 1 次，目標 5
         cefr_adv_themes = {aid for aid in cefr_adv_themes if aid in effective_done_ids}
         advanced_fit_progress = build_fixed_advanced_progress(cefr_adv_themes)
     else:

@@ -1,11 +1,13 @@
-/** 後端 CEFR levelKey → 前端顯示大階（rubric 仍用 CEFR，僅 UI 對照） */
+/** 後端 CEFR levelKey → 前端顯示大階
+ *  入門=PreA1｜基礎=A1/A2/B1｜進階=B2｜高階=C1/C2/C1C2
+ */
 import { colors } from '../theme/tokens'
 
 const CEFR_TO_TIER = {
   PreA1: '入門',
   A1: '基礎',
   A2: '基礎',
-  B1: '進階',
+  B1: '基礎',
   B2: '進階',
   C1: '高階',
   C2: '高階',

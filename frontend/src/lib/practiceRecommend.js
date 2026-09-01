@@ -252,6 +252,10 @@ export function flattenRatedAssistants(cefrGroups = []) {
       assistantId: a.assistantId,
       assistantName: a.assistantName || a.assistantId,
       assistantDescription: a.assistantDescription || '',
+      conversationId:
+        a.conversationId || a.activeCefrConversationId || null,
+      activeCefrConversationId: a.activeCefrConversationId || null,
+      modelId: a.modelId || null,
       levelKey: a.levelKey,
       nextLevelKey: a.nextLevelKey,
       confidence: a.confidence,
@@ -276,6 +280,7 @@ export function flattenRecentPractice(recentPractice = []) {
       assistantDescription: item.assistantDescription || '',
       conversationTitle: item.conversationTitle || null,
       conversationId: item.conversationId || null,
+      modelId: item.modelId || null,
       levelKey: item.levelKey,
       nextLevelKey: item.nextLevelKey,
       confidence: item.confidence,
@@ -392,9 +397,9 @@ export function summarizeFit(items = []) {
   return { matched, unmatched, total: matched + unmatched }
 }
 
-/** 自我調節共同目標：6 個聊天室到達「進階」 */
+/** 自我調節共同目標：5 個聊天室到達「進階」 */
 export const SRL_GOAL_TIER = '進階'
-export const SRL_GOAL_ROOMS = 6
+export const SRL_GOAL_ROOMS = 5
 
 function normalizeFitKey(fitStatus) {
   return String(fitStatus || '')
@@ -817,6 +822,7 @@ export function recommendAssistants(items = [], selectedFocusList = [], options 
       id: item.conversationId || item.assistantId,
       assistantId: item.assistantId,
       conversationId: item.conversationId || null,
+      modelId: item.modelId || null,
       conversationTitle: item.conversationTitle || null,
       assistantName: item.assistantName || item.assistantId,
       reason: buildReason(item, focuses, mode, primaryTier),
