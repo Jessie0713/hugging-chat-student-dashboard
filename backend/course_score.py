@@ -2,7 +2,52 @@
 """新制課程成績：里程碑 80 + 進階守護龍 20 + 額外加成 8（最高 108）。"""
 from __future__ import annotations
 
+import os
 from typing import Any
+
+# 獎章／里程碑只認這 8 個課程主題（assistantId）
+# 可用 env COURSE_BADGE_THEME_IDS=id1,id2,... 覆寫（逗號分隔）
+DEFAULT_COURSE_BADGE_THEMES: list[dict[str, str]] = [
+    {"id": "6a974e7833b25cbb33e62ee8", "name": "Future Movement Planner"},
+    {"id": "6a974e2d33b25cbb33e62ed5", "name": "Panama Canal Story"},
+    {"id": "6a974dd833b25cbb33e62ec2", "name": "VR Treatment Talk"},
+    {"id": "6a974d9633b25cbb33e62eb1", "name": "EQ vs IQ Compare"},
+    {"id": "6a974d5233b25cbb33e62ea2", "name": "Can Machines Think?"},
+    {"id": "6a974cb033b25cbb33e62e7d", "name": "Handmade vs Machine Debate"},
+    {"id": "6a974c0e33b25cbb33e62e5a", "name": "Biomimicry Explainer"},
+    {"id": "6a974b1f33b25cbb33e62e1e", "name": "Product Design Talk"},
+]
+
+
+def _theme_ids_from_env() -> frozenset[str] | None:
+    raw = (os.getenv("COURSE_BADGE_THEME_IDS") or "").strip()
+    if not raw:
+        return None
+    ids = {x.strip() for x in raw.split(",") if x.strip()}
+    return frozenset(ids) if ids else None
+
+
+COURSE_BADGE_THEME_IDS: frozenset[str] = (
+    _theme_ids_from_env()
+    or frozenset(t["id"] for t in DEFAULT_COURSE_BADGE_THEMES)
+)
+
+COURSE_BADGE_THEMES: list[dict[str, str]] = [
+    t
+    for t in DEFAULT_COURSE_BADGE_THEMES
+    if t["id"] in COURSE_BADGE_THEME_IDS
+] or list(DEFAULT_COURSE_BADGE_THEMES)
+
+
+def is_course_badge_theme(assistant_id: str | None) -> bool:
+    if assistant_id is None:
+        return False
+    return str(assistant_id).strip() in COURSE_BADGE_THEME_IDS
+
+
+def filter_course_theme_ids(ids: set[str] | list[str] | None) -> set[str]:
+    return {str(x) for x in (ids or []) if is_course_badge_theme(x)}
+
 
 # (need_topics, need_views, score)
 MILESTONE_TIERS: list[tuple[int, int, int]] = [

@@ -70,7 +70,7 @@ export default function BadgeTopicProgressCard({ topics = [], loading }) {
           逐題有效練習
         </Typography>
         <Typography sx={{ ...type.subtitle, mb: 1.5 }}>
-          合格回應須為語音、全英文，且 ≥2 句或單句 &gt;10 字
+          僅計課程指定的 8 個主題；合格回應須為語音、全英文，且 ≥2 句或單句 &gt;10 字
         </Typography>
 
         {loading ? (

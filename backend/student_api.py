@@ -15,6 +15,8 @@ from mongo_db import get_db_by_source, normalize_source
 from db import fetch_one  # 你已經有 Moodle 的連線工具
 from azure_openai import azure_chat
 from course_score import (
+    COURSE_BADGE_THEME_IDS,
+    COURSE_BADGE_THEMES,
     DASHBOARD_ENTER_EVENT,
     DASHBOARD_PICK_EVENT,
     DASHBOARD_USAGE_WINDOW_HOURS,
@@ -22,6 +24,8 @@ from course_score import (
     DEFAULT_BADGE_DEFINITIONS,
     compute_course_score,
     compute_earned_badge_ids,
+    filter_course_theme_ids,
+    is_course_badge_theme,
     is_level_advanced,
 )
 router = APIRouter(prefix="/api/{source}/student", tags=["student"])
@@ -730,7 +734,11 @@ def _practice_tier_from_level_key(level_key: str | None) -> str | None:
 
 
 def _normalize_achievement_badge_stats(badge_stats: dict) -> dict:
-    """對齊 Chat UI users.badge.stats；舊欄位 fallback 避免舊資料全 0。"""
+    """對齊 Chat UI users.badge.stats；舊欄位 fallback 避免舊資料全 0。
+
+    completedTopicCount / advancedTopicCount 一律依課程白名單主題重算，
+    不直接信任 Chat UI 寫入的總數（可能含非課程主題）。
+    """
     per_assistant = badge_stats.get("perAssistant")
     if not isinstance(per_assistant, dict):
         per_assistant = {}
@@ -748,29 +756,6 @@ def _normalize_achievement_badge_stats(badge_stats: dict) -> dict:
                 "effectiveRoundComplete": aid_str in effective_ids or ec >= 8,
             }
 
-    completed = badge_stats.get("completedTopicCount")
-    if completed is None:
-        completed = sum(
-            1
-            for v in per_assistant.values()
-            if isinstance(v, dict) and v.get("effectiveRoundComplete")
-        )
-
-    max_eff = badge_stats.get("maxEffectiveCount")
-    if max_eff is None:
-        counts = [
-            int(v.get("effectiveCount") or 0)
-            for v in per_assistant.values()
-            if isinstance(v, dict)
-        ]
-        max_eff = max(counts) if counts else 0
-
-    advanced = badge_stats.get("advancedTopicCount")
-    adv_ids_raw = badge_stats.get("effectiveAdvancedAssistantIds") or []
-    adv_ids = [str(x) for x in adv_ids_raw if x is not None and str(x).strip()]
-    if advanced is None:
-        advanced = len(adv_ids)
-
     normalized_per: dict[str, dict] = {}
     for aid, info in per_assistant.items():
         if not isinstance(info, dict):
@@ -783,13 +768,38 @@ def _normalize_achievement_badge_stats(badge_stats: dict) -> dict:
             ),
         }
 
+    # 獎章主題：只計 COURSE_BADGE_THEME_IDS
+    course_per = {
+        aid: info
+        for aid, info in normalized_per.items()
+        if is_course_badge_theme(aid)
+    }
+    completed = sum(
+        1
+        for info in course_per.values()
+        if info.get("effectiveRoundComplete")
+    )
+
+    max_eff = 0
+    for info in course_per.values():
+        max_eff = max(max_eff, int(info.get("effectiveCount") or 0))
+
+    adv_ids_raw = badge_stats.get("effectiveAdvancedAssistantIds") or []
+    adv_ids = [
+        str(x)
+        for x in adv_ids_raw
+        if x is not None and is_course_badge_theme(str(x))
+    ]
+    advanced = len(adv_ids)
+
     return {
         "totalMessages": int(badge_stats.get("totalMessages") or 0),
         "perAssistant": normalized_per,
-        "completedTopicCount": int(completed or 0),
-        "advancedTopicCount": int(advanced or 0),
+        "completedTopicCount": int(completed),
+        "advancedTopicCount": int(advanced),
         "effectiveAdvancedAssistantIds": adv_ids,
-        "maxEffectiveCount": int(max_eff or 0),
+        "maxEffectiveCount": int(max_eff),
+        "courseThemeIds": sorted(COURSE_BADGE_THEME_IDS),
     }
 
 
@@ -890,7 +900,9 @@ async def count_second_advanced_assistants(db, user_oid: ObjectId) -> int:
         by_assistant[str(aid)].append(doc.get("levelKey"))
 
     count = 0
-    for ratings in by_assistant.values():
+    for aid, ratings in by_assistant.items():
+        if not is_course_badge_theme(aid):
+            continue
         if len(ratings) < 2:
             continue
         if is_level_advanced(ratings[1]):
@@ -903,6 +915,7 @@ async def build_badge_topic_details(
     user: dict,
     badge_stats: dict,
 ) -> list[dict]:
+    """只顯示課程白名單 8 主題（即使尚無練習也列出）。"""
     per_assistant = badge_stats.get("perAssistant") or {}
     agent_map: dict[str, dict] = {}
     for entry in user.get("agentCefr") or []:
@@ -910,22 +923,27 @@ async def build_badge_topic_details(
         if aid is not None:
             agent_map[str(aid)] = entry
 
-    assistant_ids = list(per_assistant.keys())
-    name_map = await build_assistant_name_map(db, assistant_ids)
+    # 固定 8 主題順序；名稱優先用 DEFAULT 定義，缺則查 Mongo
+    theme_ids = [t["id"] for t in COURSE_BADGE_THEMES]
+    if not theme_ids:
+        theme_ids = sorted(COURSE_BADGE_THEME_IDS)
+
+    name_map = await build_assistant_name_map(db, theme_ids)
+    fallback_names = {t["id"]: t["name"] for t in COURSE_BADGE_THEMES}
 
     details = []
-    for aid, info in per_assistant.items():
-        if not isinstance(info, dict):
-            continue
+    for aid in theme_ids:
+        info = per_assistant.get(aid) if isinstance(per_assistant.get(aid), dict) else {}
         agent = agent_map.get(aid, {})
         level_key = agent.get("levelKey")
         details.append({
             "assistantId": aid,
-            "assistantName": name_map.get(aid, aid),
+            "assistantName": name_map.get(aid) or fallback_names.get(aid) or aid,
             "effectiveCount": int(info.get("effectiveCount") or 0),
             "effectiveRoundComplete": bool(info.get("effectiveRoundComplete")),
             "practiceTier": _practice_tier_from_level_key(level_key),
             "levelKey": level_key,
+            "isCourseTheme": True,
         })
 
     details.sort(
@@ -1029,6 +1047,7 @@ async def badges(source: str, hfUserId: str):
         "badge": badge_payload,
         "badgeDefinitions": definitions,
         "badgeTopicDetails": topic_details,
+        "courseBadgeThemes": COURSE_BADGE_THEMES,
     }
 # backend/student_api.py
 
@@ -1286,8 +1305,8 @@ def build_fixed_advanced_progress(
     theme_ids: set[str] | None = None,
     goal: int = 5,
 ) -> dict:
-    """Fixed 課程進度：選進階＋評估≥進階＋有效對話完成；assistant 各最多 1，目標 5。"""
-    ids = sorted({str(x) for x in (theme_ids or set()) if x is not None and str(x).strip()})
+    """Fixed 課程進度：選進階＋評估≥進階＋有效對話完成；只計課程白名單主題，目標 5。"""
+    ids = sorted(filter_course_theme_ids(theme_ids))
     count = len(ids)
     return {
         "tier": "進階",
@@ -1303,9 +1322,9 @@ def build_rolling_advanced_progress(
     goal: int = 5,
     effective_ids: set[str] | None = None,
 ) -> dict:
-    """rolling：評估達進階／高階且有效對話已完成的 assistant 數。"""
+    """rolling：評估達進階／高階且有效對話已完成；只計課程白名單主題。"""
     advanced_ids: set[str] = set()
-    eff = effective_ids  # None＝不篩（舊行為）；傳入 set 則必須有效對話完成
+    eff = effective_ids  # None＝不篩有效對話；傳入 set 則必須有效對話完成
     for entry in agent_cefr or []:
         tier = _practice_tier_from_level_key(entry.get("levelKey"))
         if tier not in ("進階", "高階"):
@@ -1314,6 +1333,8 @@ def build_rolling_advanced_progress(
         if not aid:
             continue
         aid_str = str(aid)
+        if not is_course_badge_theme(aid_str):
+            continue
         if eff is not None and aid_str not in eff:
             continue
         advanced_ids.add(aid_str)
@@ -1331,6 +1352,8 @@ def _effective_complete_assistant_ids(badge_stats: dict | None) -> set[str]:
     per = (badge_stats or {}).get("perAssistant") or {}
     out: set[str] = set()
     for aid, info in per.items():
+        if not is_course_badge_theme(aid):
+            continue
         if isinstance(info, dict) and info.get("effectiveRoundComplete"):
             out.add(str(aid))
     return out
@@ -1628,6 +1651,7 @@ async def student_overview(source: str, hfUserId: str):
         "badge": badge_payload,
         "badgeDefinitions": badge_definitions,
         "badgeTopicDetails": badge_topic_details,
+        "courseBadgeThemes": COURSE_BADGE_THEMES,
         "timeseries": timeseries,
         "assistantUsage": assistant_usage,
         "cefrGroups": cefr_groups,
