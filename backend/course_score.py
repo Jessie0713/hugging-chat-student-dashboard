@@ -130,7 +130,7 @@ DEFAULT_BADGE_DEFINITIONS: list[dict[str, Any]] = [
         "id": "kaiju_guardian",
         "name": "守護神獸",
         "meaning": "五題二次評級達進階，神獸現身為你的進步守關。",
-        "unlock": "5 個主題第二次評級達進階（或以上）",
+        "unlock": "5 個主題第二次評級達進階（或以上）且完成有效對話",
         "iconUrl": "/dinosaurs/dino-kaiju-happy.png",
         "ruleType": "advanced_second_rating",
         "threshold": 5,

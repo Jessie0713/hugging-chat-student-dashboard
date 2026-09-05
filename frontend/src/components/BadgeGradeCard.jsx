@@ -145,7 +145,7 @@ export function BadgeGradeSummary({
       </Box>
 
       <Typography variant='caption' sx={{ opacity: 0.8, lineHeight: 1.45 }}>
-        有效主題 {topics}/8 · 完成練習 {usage} 次 · 第二次評級進階 {secondAdv}/5
+        有效主題 {topics}/8 · 完成練習 {usage} 次 · 第二次評級進階＋有效對話 {secondAdv}/5
       </Typography>
 
       
