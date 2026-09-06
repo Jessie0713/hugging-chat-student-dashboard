@@ -578,11 +578,17 @@ function scoreFocusTotal(item, focuses) {
  * Fixed 不靠這層分數，改用 rank 分桶排序
  */
 function scoreRollingBonus(item) {
+  // 已達標（進階＋有效對話）→ 不再加分，排序靠 rank 置後
+  if (isRollingCourseMetRoom(item)) return -20
+
   let score = 0
   const tier = cefrToTier(item.levelKey)
   const ti = TIER_ORDER.indexOf(tier)
   const goalIdx = TIER_ORDER.indexOf('進階')
+  // 尚未進階 → 鼓勵往進階靠近
   if (ti >= 0 && ti < goalIdx) score += 6
+  // 已進階、只差有效對話 → 小幅加分（真正優先靠 rank=0）
+  if (isRollingAdvancedRoom(item) && !isEffectiveRoundComplete(item)) score += 4
   if (typeof item.confidence === 'number' && item.confidence < 0.85) {
     score += 0.5
   }
@@ -669,6 +675,17 @@ function buildReason(item, selectedFocusList, mode, primaryTier) {
   }
 
   // rolling：變動等級（目標階依「這個情境」判斷）
+  if (isRollingCourseMetRoom(item)) {
+    return matched.length
+      ? `「${where}」已達進階並完成有效對話；若要再練「${hit}」可當複習。`
+      : `「${where}」已達進階並完成有效對話；用「${chosen}」再練可當複習。`
+  }
+  if (isRollingAdvancedRoom(item) && !isEffectiveRoundComplete(item)) {
+    return matched.length
+      ? `想練「${hit}」優先回「${where}」：程度已達進階，還差有效對話，快補完最划算。`
+      : `想練「${chosen}」優先回「${where}」：程度已達進階，還差有效對話，快補完最划算。`
+  }
+
   const benefit = rollingBenefitText(item, primaryTier)
 
   if (matched.length) {
@@ -691,6 +708,20 @@ function buildPracticeFocus(item, selectedFocusList) {
     .filter(Boolean)
   if (tips.length) return tips.join(' ')
   return '請嘗試用完整句子回答，並針對情境多說一點細節。'
+}
+
+/**
+ * Rolling 推薦優先序（數字越小越前面）
+ * 0＝評估≥進階，但有效對話尚未完成（最划算、最優先）
+ * 1＝尚未到達進階
+ * 2＝其他
+ * 3＝課程已達標（評估≥進階＋有效對話完成）（最後）
+ */
+function rollingRecommendRank(item) {
+  if (isRollingCourseMetRoom(item)) return 3
+  if (isRollingAdvancedRoom(item) && !isEffectiveRoundComplete(item)) return 0
+  if (!isRollingAdvancedRoom(item)) return 1
+  return 2
 }
 
 /**
@@ -774,11 +805,9 @@ export function recommendAssistants(items = [], selectedFocusList = [], options 
         themeId: tid,
       }
     }
-    // Rolling：程度已進階但有效對話未完 → 最前；已完成有效輪 → 最後
-    let rank = 1
-    if (isRollingAdvancedRoom(item)) {
-      rank = isEffectiveRoundComplete(item) ? 3 : 0
-    }
+    // Rolling：用 rollingRecommendRank 分桶
+    // 0＝已進階差有效對話（最前）；1＝未進階；3＝進階＋有效對話已完成（最後）
+    const rank = rollingRecommendRank(item)
     return {
       item,
       focusScore,

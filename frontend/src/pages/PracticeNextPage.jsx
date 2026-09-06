@@ -1588,7 +1588,7 @@ export default function PracticeNextPage() {
               hint={
                 fixed
                   ? '最多 2 個；優先：選進階已達程度但差有效對話 → 選進階未達程度 → 已完成最後'
-                  : '最多 2 個；優先：評估≥進階但差有效對話，再推尚未進階'
+                  : '最多 2 個；優先：評估≥進階但差有效對話 → 尚未進階 → 已達標（進階＋有效對話）最後'
               }
               dinoSrc={DINO.act.src}
               dinoMotion='bob'
