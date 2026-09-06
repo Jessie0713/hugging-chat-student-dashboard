@@ -656,23 +656,33 @@ export default function PracticeNextPage() {
 
   const advancedProgress = useMemo(() => {
     const fromApi = data?.advancedFitProgress
+    const normalize = (p) => {
+      const goal = Number(p.goal) || SRL_GOAL_ROOMS
+      const raw =
+        typeof p.rawCount === 'number' ? p.rawCount : Number(p.count) || 0
+      const count = Math.min(raw, goal)
+      return {
+        tier: p.tier || SRL_GOAL_TIER,
+        count,
+        goal,
+        met: Boolean(p.met) || raw >= goal,
+        mode: p.mode || (fixed ? 'fixed' : 'rolling'),
+        themeIds: Array.isArray(p.themeIds) ? p.themeIds : [],
+        rawCount: raw,
+      }
+    }
     if (
       fromApi &&
       typeof fromApi.count === 'number' &&
       typeof fromApi.goal === 'number'
     ) {
-      return {
-        tier: fromApi.tier || SRL_GOAL_TIER,
-        count: fromApi.count,
-        goal: fromApi.goal || SRL_GOAL_ROOMS,
-        met: Boolean(fromApi.met),
-        mode: fromApi.mode || (fixed ? 'fixed' : 'rolling'),
-        themeIds: Array.isArray(fromApi.themeIds) ? fromApi.themeIds : [],
-      }
+      return normalize(fromApi)
     }
-    return fixed
-      ? summarizeAdvancedFitProgress(practiceItems)
-      : summarizeRollingAdvancedProgress(practiceItems)
+    return normalize(
+      fixed
+        ? summarizeAdvancedFitProgress(practiceItems)
+        : summarizeRollingAdvancedProgress(practiceItems),
+    )
   }, [data, fixed, practiceItems])
 
   const weaknesses = useMemo(

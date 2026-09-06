@@ -451,14 +451,16 @@ export function summarizeAdvancedFitProgress(
   goal = SRL_GOAL_ROOMS,
 ) {
   const ids = collectFixedAdvancedThemeIds(items)
-  const count = ids.size
+  const raw = ids.size
+  const count = Math.min(raw, goal)
   return {
     tier: SRL_GOAL_TIER,
     count,
     goal,
-    met: count >= goal,
+    met: raw >= goal,
     mode: 'fixed',
     themeIds: [...ids],
+    rawCount: raw,
   }
 }
 
@@ -530,13 +532,16 @@ export function summarizeRollingAdvancedProgress(
     const id = item.assistantId || item.conversationId
     if (id) ids.add(String(id))
   }
-  const count = ids.size
+  const raw = ids.size
+  const count = Math.min(raw, goal)
   return {
     tier: SRL_GOAL_TIER,
     count,
     goal,
-    met: count >= goal,
+    met: raw >= goal,
     mode: 'rolling',
+    themeIds: [...ids],
+    rawCount: raw,
   }
 }
 

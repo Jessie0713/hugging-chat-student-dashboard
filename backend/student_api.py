@@ -1307,14 +1307,16 @@ def build_fixed_advanced_progress(
 ) -> dict:
     """Fixed 課程進度：選進階＋評估≥進階＋有效對話完成；只計課程白名單主題，目標 5。"""
     ids = sorted(filter_course_theme_ids(theme_ids))
-    count = len(ids)
+    raw = len(ids)
+    count = min(raw, goal)
     return {
         "tier": "進階",
         "count": count,
         "goal": goal,
-        "met": count >= goal,
+        "met": raw >= goal,
         "mode": "fixed",
         "themeIds": ids,
+        "rawCount": raw,
     }
 
 def build_rolling_advanced_progress(
@@ -1338,13 +1340,16 @@ def build_rolling_advanced_progress(
         if eff is not None and aid_str not in eff:
             continue
         advanced_ids.add(aid_str)
-    count = len(advanced_ids)
+    count = min(len(advanced_ids), goal)
+    raw = len(advanced_ids)
     return {
         "tier": "進階",
         "count": count,
         "goal": goal,
-        "met": count >= goal,
+        "met": raw >= goal,
         "mode": "rolling",
+        "themeIds": sorted(advanced_ids),
+        "rawCount": raw,
     }
 
 
