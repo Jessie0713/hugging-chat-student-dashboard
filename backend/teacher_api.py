@@ -23,6 +23,7 @@ from course_score import (
 )
 from db import fetch_all
 from mongo_db import get_db_by_source, normalize_source
+from topic_fit import review_student_grade
 from student_api import (
     _effective_complete_assistant_ids,
     _normalize_achievement_badge_stats,
@@ -533,6 +534,25 @@ async def teacher_roster(
         "students": rows,
         "summary": _class_summary(rows),
     }
+
+
+@router.get("/grade-review")
+async def teacher_grade_review(
+    source: str = Query("rolling_level"),
+    hfUserId: str = Query(...),
+    x_teacher_code: str | None = Header(default=None, alias="X-Teacher-Code"),
+):
+    _require_teacher(x_teacher_code)
+    src = (source or "").strip().lower()
+    if src not in COHORTS:
+        raise HTTPException(status_code=400, detail="source 需為 rolling_level 或 fixed_level")
+    db = get_db_by_source(normalize_source(src))
+    try:
+        return await review_student_grade(db, src, hfUserId)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"切題審查失敗：{e}") from e
 
 
 CONV_PROJECTION = {

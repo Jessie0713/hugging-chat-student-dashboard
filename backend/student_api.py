@@ -881,8 +881,8 @@ async def count_dashboard_usage(db, hf_user_id: str) -> int:
     return matched
 
 
-async def count_second_advanced_assistants(db, user_oid: ObjectId) -> int:
-    """第二次評級達進階（B2+）的 assistant 數。"""
+async def second_advanced_assistant_ids(db, user_oid: ObjectId) -> set[str]:
+    """第二次評級達進階（B2+）的課程主題 assistantId。"""
     try:
         cursor = db["cefrEvents"].find(
             {"userId": user_oid},
@@ -890,7 +890,7 @@ async def count_second_advanced_assistants(db, user_oid: ObjectId) -> int:
         ).sort([("createdAt", 1)])
         docs = await cursor.to_list(length=50000)
     except Exception:
-        return 0
+        return set()
 
     by_assistant: dict[str, list[str | None]] = defaultdict(list)
     for doc in docs:
@@ -899,15 +899,20 @@ async def count_second_advanced_assistants(db, user_oid: ObjectId) -> int:
             continue
         by_assistant[str(aid)].append(doc.get("levelKey"))
 
-    count = 0
+    out: set[str] = set()
     for aid, ratings in by_assistant.items():
         if not is_course_badge_theme(aid):
             continue
         if len(ratings) < 2:
             continue
         if is_level_advanced(ratings[1]):
-            count += 1
-    return count
+            out.add(aid)
+    return out
+
+
+async def count_second_advanced_assistants(db, user_oid: ObjectId) -> int:
+    """第二次評級達進階（B2+）的 assistant 數。"""
+    return len(await second_advanced_assistant_ids(db, user_oid))
 
 
 async def build_badge_topic_details(
