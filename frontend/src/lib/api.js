@@ -21,16 +21,17 @@ async function errorMessageFromResponse(r) {
   return text || `HTTP ${r.status}`
 }
 
-export async function apiGet(url) {
-  const r = await fetch(`${API_BASE}${url}`)
+export async function apiGet(url, options = {}) {
+  const headers = { ...(options.headers || {}) }
+  const r = await fetch(`${API_BASE}${url}`, { headers })
   if (!r.ok) throw new Error(await errorMessageFromResponse(r))
   return r.json()
 }
 
-export async function apiPost(url, body) {
+export async function apiPost(url, body, options = {}) {
   const r = await fetch(`${API_BASE}${url}`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
     body: body ? JSON.stringify(body) : '{}',
   })
   if (!r.ok) throw new Error(await errorMessageFromResponse(r))

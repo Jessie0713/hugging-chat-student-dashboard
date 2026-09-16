@@ -63,6 +63,12 @@ const GRADE_NOTE_BY_ID = {
   srl_reflect: '額外加成來源',
 }
 
+function rewritePracticeLabel(text) {
+  return String(text || '')
+    .replaceAll('依練習建議完成練習', '查看儀表板')
+    .replaceAll('完成練習', '查看儀表板')
+}
+
 function dashboardUsageCount(stats) {
   const s = stats ?? {}
   return s.dashboardUsageCount ?? s.dashboardViewCount ?? 0
@@ -97,9 +103,9 @@ function milestoneDualProgress(def, stats) {
   const topicsOk = topics >= needTopics
   const usageOk = usage >= needViews
   if (topicsOk && usageOk) {
-    return `${needTopics}/${needTopics} 主題 · ${needViews}/${needViews} 完成練習`
+    return `${needTopics}/${needTopics} 主題 · ${needViews}/${needViews} 查看儀表板`
   }
-  return `${Math.min(topics, needTopics)}/${needTopics} 主題 · ${Math.min(usage, needViews)}/${needViews} 完成練習`
+  return `${Math.min(topics, needTopics)}/${needTopics} 主題 · ${Math.min(usage, needViews)}/${needViews} 查看儀表板`
 }
 
 function milestoneDualRemaining(def, stats) {
@@ -114,7 +120,7 @@ function milestoneDualRemaining(def, stats) {
     parts.push(`還差 ${needTopics - topics} 主題有效一輪`)
   }
   if (usage < needViews) {
-    parts.push(`還差 ${needViews - usage} 次依練習建議完成練習`)
+    parts.push(`還差 ${needViews - usage} 次查看儀表板`)
   }
   return parts.join(' · ')
 }
@@ -125,7 +131,7 @@ function attachProgressHelpers(def) {
     def.ruleType === 'total_messages'
       ? '則訊息'
       : def.ruleType === 'dashboard_views'
-        ? '次完成練習'
+        ? '次查看儀表板'
         : def.ruleType === 'advanced_second_rating'
           ? '題第二次評級達進階'
           : def.ruleType === 'milestone_dual'
@@ -173,7 +179,7 @@ const ACHIEVEMENT_BADGES = [
     iconUrl: '/dinosaurs/dino-trail.png',
     name: '足跡初現',
     meaning: '探險小徑上留下第一批腳印，你也開始回營地查看地圖。',
-    unlock: `2 個主題有效一輪${QUALIFIED_HINT} + 依練習建議完成練習 2 次`,
+    unlock: `2 個主題有效一輪${QUALIFIED_HINT} + 查看儀表板 2 次`,
     threshold: 2,
     ruleType: 'milestone_dual',
     meta: { views: 2, baseScore: 30 },
@@ -184,7 +190,7 @@ const ACHIEVEMENT_BADGES = [
     iconUrl: '/dinosaurs/dino-flyer.png',
     name: '翼手龍觀察',
     meaning: '翼手龍帶你從高處俯瞰練習足跡，學會觀察再出發。',
-    unlock: `4 個主題有效一輪${QUALIFIED_HINT} + 依練習建議完成練習 3 次`,
+    unlock: `4 個主題有效一輪${QUALIFIED_HINT} + 查看儀表板 3 次`,
     threshold: 4,
     ruleType: 'milestone_dual',
     meta: { views: 3, baseScore: 50 },
@@ -195,7 +201,7 @@ const ACHIEVEMENT_BADGES = [
     iconUrl: '/dinosaurs/dino-armor.png',
     name: '甲龍就緒',
     meaning: '厚甲護身、策略在握——六片棲地都已有效練習。',
-    unlock: `6 個主題有效一輪${QUALIFIED_HINT} + 依練習建議完成練習 4 次`,
+    unlock: `6 個主題有效一輪${QUALIFIED_HINT} + 查看儀表板 4 次`,
     threshold: 6,
     ruleType: 'milestone_dual',
     meta: { views: 4, baseScore: 60 },
@@ -206,7 +212,7 @@ const ACHIEVEMENT_BADGES = [
     iconUrl: '/dinosaurs/dino-rex.png',
     name: '棲地王者',
     meaning: '八片棲地盡收腳下，你是這趟口說探險的王者。',
-    unlock: `8 個主題有效一輪${QUALIFIED_HINT} + 依練習建議完成練習 5 次`,
+    unlock: `8 個主題有效一輪${QUALIFIED_HINT} + 查看儀表板 5 次`,
     threshold: 8,
     ruleType: 'milestone_dual',
     meta: { views: 5, baseScore: 80 },
@@ -227,7 +233,7 @@ const ACHIEVEMENT_BADGES = [
     iconUrl: '/dinosaurs/dino-explore.png',
     name: '回望探險家',
     meaning: '你會定期回到營地檢視地圖，第 6 次查看起可獲額外加成。',
-    unlock: '依練習建議完成練習 5 次（第 6 次起每次 +2 分額外加成）',
+    unlock: '查看儀表板 5 次（第 6 次起每次 +2 分額外加成）',
     threshold: 5,
     ruleType: 'dashboard_views',
     sortOrder: 7,
@@ -251,7 +257,7 @@ export function hydrateBadgeDefinitions(apiDefs) {
           id: d.id,
           name: d.name,
           meaning: d.meaning,
-          unlock: d.unlock,
+          unlock: rewritePracticeLabel(d.unlock),
           iconUrl: d.iconUrl,
           ruleType: d.ruleType,
           threshold: d.threshold,

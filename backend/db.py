@@ -81,3 +81,10 @@ def fetch_one(sql: str, params=None):
         with conn.cursor() as cur:
             cur.execute(sql, params or ())
             return cur.fetchone()
+
+
+def fetch_all(sql: str, params=None):
+    with DoubleSSHTunnelDB() as conn:
+        with conn.cursor() as cur:
+            cur.execute(sql, params or ())
+            return cur.fetchall()
