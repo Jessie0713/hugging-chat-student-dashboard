@@ -109,12 +109,20 @@ const stickyRightBody = {
 const midCell = { whiteSpace: 'nowrap' }
 
 function pct(v) {
-  return Math.round(Number(v || 0) * 100)
+  if (v == null || v === '') return null
+  const n = Number(v)
+  return Number.isFinite(n) ? Math.round(n * 100) : null
 }
 
 function num(v, digits = 2) {
+  if (v == null || v === '') return '—'
   const n = Number(v)
-  return Number.isFinite(n) ? n.toFixed(digits) : '0'
+  return Number.isFinite(n) ? n.toFixed(digits) : '—'
+}
+
+function pctLabel(v) {
+  const n = pct(v)
+  return n == null ? '—' : `${n}%`
 }
 
 function sharePct(count, total) {
@@ -325,7 +333,7 @@ export default function TeacherRoster() {
   }
 
   const kpis = [
-    { title: '英文佔比', value: pct(summary.avgEnglishRatio), suffix: '%' },
+    { title: '英文佔比', value: pct(summary.avgEnglishRatio) ?? 0, suffix: '%' },
     { title: '詞彙豐富度', value: num(summary.avgLexicalRichness) },
     { title: '平均輪次', value: num(summary.avgTurns) },
     { title: '平均時長', value: num(summary.avgDurationMin), suffix: ' 分' },
@@ -549,7 +557,7 @@ export default function TeacherRoster() {
                         {s.totalScore}
                       </TableCell>
                       <TableCell align='right' sx={midCell}>{s.conversationCount ?? 0}</TableCell>
-                      <TableCell align='right' sx={midCell}>{pct(s.englishRatio)}%</TableCell>
+                      <TableCell align='right' sx={midCell}>{pctLabel(s.englishRatio)}</TableCell>
                       <TableCell align='right' sx={midCell}>{num(s.lexicalRichness)}</TableCell>
                       <TableCell align='right' sx={midCell}>{num(s.avgTurns)}</TableCell>
                       <TableCell align='right' sx={midCell}>{num(s.avgDurationMin)}</TableCell>

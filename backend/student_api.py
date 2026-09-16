@@ -1416,18 +1416,55 @@ _RE_EN = re.compile(r"[A-Za-z]")
 _RE_HAN = re.compile(r"[\u4e00-\u9fff]")
 _RE_WORD = re.compile(r"[A-Za-z]+(?:'[A-Za-z]+)?")
 
-def analyze_text_metrics(text: str) -> tuple[float, float]:
-    text = text or ""
 
+def message_plain_text(content: Any) -> str:
+    if isinstance(content, str):
+        return content.strip()
+    if isinstance(content, list):
+        return "\n".join(message_plain_text(x) for x in content).strip()
+    if isinstance(content, dict):
+        return str(content.get("text") or content.get("content") or "").strip()
+    return ""
+
+
+def iter_user_message_texts(convs: list[dict]):
+    """每個使用者發言 → (day_key, text)。沒有訊息時間就用對話時間。"""
+    for conv in convs or []:
+        conv_day = day_key(conv.get("updatedAt") or conv.get("createdAt"))
+        for m in conv.get("messages") or []:
+            if m.get("from") != "user":
+                continue
+            text = message_plain_text(m.get("content"))
+            if not text:
+                continue
+            ts = (
+                m.get("updatedAt")
+                or m.get("createdAt")
+                or m.get("time")
+                or m.get("timestamp")
+            )
+            day = day_key(ts) if isinstance(ts, datetime) else conv_day
+            yield day, text
+
+
+def text_letter_counts(text: str) -> dict[str, Any]:
+    text = text or ""
     en_chars = len(_RE_EN.findall(text))
     han_chars = len(_RE_HAN.findall(text))
     total_letters = en_chars + han_chars
-    english_ratio = (en_chars / total_letters) if total_letters else 0.0
-
     words = [w.lower() for w in _RE_WORD.findall(text)]
-    lexical = (len(set(words)) / len(words)) if words else 0.0
+    return {
+        "enChars": en_chars,
+        "hanChars": han_chars,
+        "englishRatio": (en_chars / total_letters) if total_letters else 0.0,
+        "lexicalRichness": (len(set(words)) / len(words)) if words else 0.0,
+        "wordCount": len(words),
+    }
 
-    return english_ratio, lexical
+
+def analyze_text_metrics(text: str) -> tuple[float, float]:
+    counts = text_letter_counts(text)
+    return float(counts["englishRatio"]), float(counts["lexicalRichness"])
 
 def day_key(dt: datetime | None) -> str:
     if not dt:
@@ -1531,12 +1568,8 @@ async def student_overview(source: str, hfUserId: str):
         active_duration_min = conversation_active_duration_min(msgs, idle_cutoff_seconds=300)
         duration_list.append(active_duration_min)
 
-        for m in msgs:
-            # 英文佔比／詞彙豐富度：只計使用者回應
-            if m.get("from") == "user":
-                content = m.get("content") or ""
-                if content.strip():
-                    all_text_parts.append(content)
+        for day, content in iter_user_message_texts([c]):
+            all_text_parts.append(content)
 
     full_text = "\n".join(all_text_parts)
     english_ratio, lexical_richness = analyze_text_metrics(full_text)
@@ -1560,11 +1593,25 @@ async def student_overview(source: str, hfUserId: str):
         by_day[k].append(c)
 
     labels = sorted([k for k in by_day.keys() if k != "unknown"])
+    texts_by_day: dict[str, list[str]] = defaultdict(list)
+    for day, text in iter_user_message_texts(convs):
+        if day != "unknown":
+            texts_by_day[day].append(text)
+    labels = sorted(set(labels) | set(texts_by_day.keys()))
     ts_english, ts_lex, ts_turns, ts_dur = [], [], [], []
+    acc_text: list[str] = []
 
     for k in labels:
-        subset = by_day[k]
-        subset_text_parts = []
+        acc_text.extend(texts_by_day.get(k) or [])
+        er, lx = analyze_text_metrics("\n".join(acc_text))
+        ts_english.append(round(er, 4) if acc_text else None)
+        ts_lex.append(round(lx, 4) if acc_text else None)
+
+        subset = by_day.get(k) or []
+        if not subset:
+            ts_turns.append(None)
+            ts_dur.append(None)
+            continue
         subset_turns = []
         subset_durs = []
 
@@ -1576,14 +1623,6 @@ async def student_overview(source: str, hfUserId: str):
                 conversation_active_duration_min(msgs, idle_cutoff_seconds=300)
             )
 
-            for m in msgs:
-                if m.get("from") == "user":
-                    t = (m.get("content") or "").strip()
-                    if t:
-                        subset_text_parts.append(t)
-        er, lx = analyze_text_metrics("\n".join(subset_text_parts))
-        ts_english.append(round(er, 4))
-        ts_lex.append(round(lx, 4))
         ts_turns.append(round(sum(subset_turns) / len(subset_turns), 2) if subset_turns else 0)
         ts_dur.append(round(sum(subset_durs) / len(subset_durs), 2) if subset_durs else 0)
 

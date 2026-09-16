@@ -30,7 +30,10 @@ from student_api import (
     analyze_text_metrics,
     conversation_active_duration_min,
     day_key,
+    iter_user_message_texts,
+    message_plain_text,
     normalize_hf_user_id,
+    text_letter_counts,
 )
 
 router = APIRouter(prefix="/api/teacher", tags=["teacher"])
@@ -226,21 +229,21 @@ def _language_stats_from_convs(convs: list[dict]) -> dict[str, Any]:
             latest = ts
         msgs = conv.get("messages") or []
         turns_list.append(
-            sum(1 for m in msgs if m.get("from") == "user" and m.get("content"))
+            sum(1 for m in msgs if m.get("from") == "user" and message_plain_text(m.get("content")))
         )
         duration_list.append(conversation_active_duration_min(msgs, idle_cutoff_seconds=300))
-        for m in msgs:
-            if m.get("from") == "user":
-                content = (m.get("content") or "").strip()
-                if content:
-                    all_text_parts.append(content)
+    for _day, text in iter_user_message_texts(convs):
+        all_text_parts.append(text)
 
-    english_ratio, lexical_richness = analyze_text_metrics("\n".join(all_text_parts))
+    counts = text_letter_counts("\n".join(all_text_parts))
+    has_text = bool(all_text_parts)
     return {
         "conversationCount": len(convs),
         "latestAt": latest,
-        "englishRatio": round(english_ratio, 4),
-        "lexicalRichness": round(lexical_richness, 4),
+        "enChars": int(counts["enChars"]),
+        "hanChars": int(counts["hanChars"]),
+        "englishRatio": round(float(counts["englishRatio"]), 4) if has_text else None,
+        "lexicalRichness": round(float(counts["lexicalRichness"]), 4) if has_text else None,
         "avgTurns": round((sum(turns_list) / len(turns_list)), 2) if turns_list else 0,
         "avgDurationMin": round((sum(duration_list) / len(duration_list)), 2) if duration_list else 0,
     }
@@ -360,8 +363,10 @@ def _summarize_user(
         "source": source,
         "sourceLabel": "固定等級" if source == "fixed_level" else "變動等級",
         "conversationCount": int((conv or {}).get("conversationCount") or 0),
-        "englishRatio": float((conv or {}).get("englishRatio") or 0),
-        "lexicalRichness": float((conv or {}).get("lexicalRichness") or 0),
+        "enChars": int((conv or {}).get("enChars") or 0),
+        "hanChars": int((conv or {}).get("hanChars") or 0),
+        "englishRatio": (conv or {}).get("englishRatio"),
+        "lexicalRichness": (conv or {}).get("lexicalRichness"),
         "avgTurns": float((conv or {}).get("avgTurns") or 0),
         "avgDurationMin": float((conv or {}).get("avgDurationMin") or 0),
         "totalMessages": total_messages,
@@ -419,6 +424,15 @@ def _class_summary(rows: list[dict]) -> dict[str, Any]:
     def avg(key: str) -> float:
         return round(sum(float(r.get(key) or 0) for r in rows) / n, 2)
 
+    en_chars = sum(int(r.get("enChars") or 0) for r in rows)
+    han_chars = sum(int(r.get("hanChars") or 0) for r in rows)
+    letter_total = en_chars + han_chars
+    lex_vals = [
+        float(r["lexicalRichness"])
+        for r in rows
+        if r.get("lexicalRichness") is not None
+    ]
+
     hist = dict(empty_hist)
     for row in rows:
         hist[_score_hist_label(row.get("totalScore"))] += 1
@@ -430,8 +444,8 @@ def _class_summary(rows: list[dict]) -> dict[str, Any]:
         "avgCompletedTopics": avg("completedTopicCount"),
         "avgDashboardUsage": avg("dashboardUsageCount"),
         "avgSecondAdvanced": avg("secondAdvancedCount"),
-        "avgEnglishRatio": round(avg("englishRatio"), 4),
-        "avgLexicalRichness": round(avg("lexicalRichness"), 4),
+        "avgEnglishRatio": round(en_chars / letter_total, 4) if letter_total else 0,
+        "avgLexicalRichness": round(sum(lex_vals) / len(lex_vals), 4) if lex_vals else 0,
         "avgTurns": avg("avgTurns"),
         "avgDurationMin": avg("avgDurationMin"),
         "goalMetCount": sum(1 for r in rows if int(r.get("secondAdvancedCount") or 0) >= 5),
@@ -546,53 +560,56 @@ def _insights_from_convs(convs: list[dict]) -> dict[str, Any]:
     turns_list: list[int] = []
     duration_list: list[float] = []
     by_day: dict[str, list[dict]] = defaultdict(list)
+    texts_by_day: dict[str, list[str]] = defaultdict(list)
 
     for c in convs:
         msgs = c.get("messages") or []
         turns_list.append(
-            sum(1 for m in msgs if m.get("from") == "user" and m.get("content"))
+            sum(1 for m in msgs if m.get("from") == "user" and message_plain_text(m.get("content")))
         )
         duration_list.append(conversation_active_duration_min(msgs, idle_cutoff_seconds=300))
-        by_day[day_key(c.get("updatedAt") or c.get("createdAt"))].append(c)
-        for m in msgs:
-            if m.get("from") == "user":
-                content = (m.get("content") or "").strip()
-                if content:
-                    all_text_parts.append(content)
+        conv_day = day_key(c.get("updatedAt") or c.get("createdAt"))
+        if conv_day != "unknown":
+            by_day[conv_day].append(c)
+
+    for day, text in iter_user_message_texts(convs):
+        all_text_parts.append(text)
+        if day != "unknown":
+            texts_by_day[day].append(text)
 
     english_ratio, lexical_richness = analyze_text_metrics("\n".join(all_text_parts))
     avg_turns = round((sum(turns_list) / len(turns_list)), 2) if turns_list else 0
     avg_duration = round((sum(duration_list) / len(duration_list)), 2) if duration_list else 0
 
-    labels = sorted(k for k in by_day if k != "unknown")
+    labels = sorted(set(by_day) | set(texts_by_day))
     ts_english, ts_lex, ts_turns, ts_dur = [], [], [], []
+    acc_text: list[str] = []
     for k in labels:
-        subset = by_day[k]
-        text_parts: list[str] = []
+        acc_text.extend(texts_by_day.get(k) or [])
+        er, lx = analyze_text_metrics("\n".join(acc_text))
+        ts_english.append(round(er, 4) if acc_text else None)
+        ts_lex.append(round(lx, 4) if acc_text else None)
+        subset = by_day.get(k) or []
+        if not subset:
+            ts_turns.append(None)
+            ts_dur.append(None)
+            continue
         subset_turns: list[int] = []
         subset_durs: list[float] = []
         for c in subset:
             msgs = c.get("messages") or []
             subset_turns.append(
-                sum(1 for m in msgs if m.get("from") == "user" and m.get("content"))
+                sum(1 for m in msgs if m.get("from") == "user" and message_plain_text(m.get("content")))
             )
             subset_durs.append(conversation_active_duration_min(msgs, idle_cutoff_seconds=300))
-            for m in msgs:
-                if m.get("from") == "user":
-                    t = (m.get("content") or "").strip()
-                    if t:
-                        text_parts.append(t)
-        er, lx = analyze_text_metrics("\n".join(text_parts))
-        ts_english.append(round(er, 4))
-        ts_lex.append(round(lx, 4))
         ts_turns.append(round(sum(subset_turns) / len(subset_turns), 2) if subset_turns else 0)
         ts_dur.append(round(sum(subset_durs) / len(subset_durs), 2) if subset_durs else 0)
 
     return {
         "stats": {
             "conversationCount": len(convs),
-            "englishRatio": round(english_ratio, 4),
-            "lexicalRichness": round(lexical_richness, 4),
+            "englishRatio": round(english_ratio, 4) if all_text_parts else 0,
+            "lexicalRichness": round(lexical_richness, 4) if all_text_parts else 0,
             "avgTurns": avg_turns,
             "avgDurationMin": avg_duration,
         },
