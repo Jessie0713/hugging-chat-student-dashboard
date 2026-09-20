@@ -391,7 +391,7 @@ export function summarizeFit(items = []) {
   let unmatched = 0
   for (const a of items) {
     if (!a.fitStatus) continue
-    if (classifyPracticeFit(a.fitStatus) === 'matched') matched += 1
+    if (classifyPracticeFit(a) === 'matched') matched += 1
     else unmatched += 1
   }
   return { matched, unmatched, total: matched + unmatched }

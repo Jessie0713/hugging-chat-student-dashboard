@@ -491,7 +491,7 @@ function RecommendationCard({ item, selected, onSelect, mode, index = 0 }) {
               <Chip
                 size='small'
                 label={formatFitStatus(item.fitStatus)}
-                {...getFitStatusChipProps(item.fitStatus)}
+                {...getFitStatusChipProps(item.fitStatus, item)}
               />
             ) : null}
           </Stack>

@@ -264,7 +264,7 @@ export default function MyPracticePanel({
   const fitFiltered = useMemo(() => {
     if (fitFilter === 'all') return recentPractice
     return recentPractice.filter(
-      (item) => classifyPracticeFit(item.fitStatus) === fitFilter,
+      (item) => classifyPracticeFit(item) === fitFilter,
     )
   }, [recentPractice, fitFilter])
 
@@ -277,7 +277,7 @@ export default function MyPracticePanel({
     let matched = 0
     let unmatched = 0
     for (const item of recentPractice) {
-      if (classifyPracticeFit(item.fitStatus) === 'matched') matched += 1
+      if (classifyPracticeFit(item) === 'matched') matched += 1
       else unmatched += 1
     }
     return { matched, unmatched, all: recentPractice.length }
@@ -438,7 +438,7 @@ export default function MyPracticePanel({
                         <Chip
                           size='small'
                           label={formatFitStatus(fitStatus)}
-                          {...getFitStatusChipProps(fitStatus)}
+                          {...getFitStatusChipProps(fitStatus, item)}
                         />
                       ) : null}
                       {item.confidence != null ? (
@@ -463,7 +463,7 @@ export default function MyPracticePanel({
                           variant='caption'
                           sx={{ opacity: 0.65, display: 'block', mb: 0.5 }}
                         >
-                          橫軸：時間 · 縱軸：是否符合選定等級（綠＝符合、橘＝不符合）
+                          橫軸：時間 · 縱軸：是否達所選等級或以上（綠＝符合、橘＝不符合）
                         </Typography>
                         <ConversationProgressChart
                           source={source}

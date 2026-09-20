@@ -733,6 +733,24 @@ def _practice_tier_from_level_key(level_key: str | None) -> str | None:
     return CEFR_TO_PRACTICE_TIER.get(level_key.strip())
 
 
+PRACTICE_TIER_RANK: dict[str, int] = {
+    "入門": 0,
+    "基礎": 1,
+    "進階": 2,
+    "高階": 3,
+}
+
+
+def _practice_fit_matched(item: dict) -> bool:
+    """評估大階 ≥ 所選等級即符合（選進階則高階也算）。"""
+    target = str(item.get("targetProductTier") or "").strip()
+    assessed = _practice_tier_from_level_key(item.get("levelKey"))
+    if target in PRACTICE_TIER_RANK and assessed in PRACTICE_TIER_RANK:
+        return PRACTICE_TIER_RANK[assessed] >= PRACTICE_TIER_RANK[target]
+    status = str(item.get("fitStatus") or "").strip().lower().replace("-", "_")
+    return status in ("in_band", "too_easy", "above")
+
+
 def _normalize_achievement_badge_stats(badge_stats: dict) -> dict:
     """對齊 Chat UI users.badge.stats；舊欄位 fallback 避免舊資料全 0。
 
@@ -1054,6 +1072,20 @@ async def badges(source: str, hfUserId: str):
         "badgeTopicDetails": topic_details,
         "courseBadgeThemes": COURSE_BADGE_THEMES,
     }
+
+
+@router.get("/{hfUserId}/grade-review")
+async def student_grade_review(source: str, hfUserId: str):
+    """點選成績時：檢查對話是否切題後再計分（獎章不收回）。"""
+    from topic_fit import review_student_grade
+
+    db = get_db_by_source(source)
+    try:
+        return await review_student_grade(db, source, hfUserId)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"切題審查失敗：{e}") from e
 # backend/student_api.py
 
 
@@ -1297,8 +1329,7 @@ def build_recent_practice(
         "unmatched": 0,
     }
     for item in recent:
-        status = item.get("fitStatus")
-        if status in ("in_band", "too_easy"):
+        if _practice_fit_matched(item):
             fit_summary["matched"] += 1
         else:
             fit_summary["unmatched"] += 1

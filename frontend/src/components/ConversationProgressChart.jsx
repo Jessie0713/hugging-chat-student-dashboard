@@ -149,7 +149,11 @@ export default function ConversationProgressChart({
           .map((p) => {
             const x = parseUtcLikeInstant(p.ts)
             if (!x) return null
-            const matched = classifyPracticeFit(p.fitStatus) === 'matched'
+            const matched =
+              classifyPracticeFit(p.fitStatus, {
+                levelKey: p.levelKey,
+                targetProductTier,
+              }) === 'matched'
             return {
               xMs: x.getTime(),
               y: matched ? 1 : 0,
@@ -170,7 +174,7 @@ export default function ConversationProgressChart({
     return () => {
       cancelled = true
     }
-  }, [source, mongoUserId, conversationId])
+  }, [source, mongoUserId, conversationId, targetProductTier])
 
   const xsMs = useMemo(
     () => (points == null ? [] : points.map((p) => p.xMs)),

@@ -42,7 +42,7 @@ import { useTheme } from '@mui/material/styles'
 import { apiGet } from '../lib/api'
 import PracticeFitSummaryCard from '../components/PracticeFitSummaryCard'
 import MyPracticePanel from '../components/MyPracticePanel'
-import { BadgeGradeSummary } from '../components/BadgeGradeCard'
+import GradeReviewPanel from '../components/GradeReviewPanel'
 import {
   filterActiveEarnedIds,
   hasLegacyEarnedIds,
@@ -863,8 +863,13 @@ function BadgeAccordionPanel({
   badgeDefinitions,
   gradeEstimate,
   loading,
+  source,
+  hfUserId,
 }) {
   const [filter, setFilter] = useState('all')
+  const [review, setReview] = useState(null)
+  const [reviewErr, setReviewErr] = useState('')
+  const [reviewLoading, setReviewLoading] = useState(false)
 
   const badges = useMemo(
     () => hydrateBadgeDefinitions(badgeDefinitions),
@@ -877,6 +882,27 @@ function BadgeAccordionPanel({
   const earnedSet = useMemo(() => new Set(activeEarnedIds), [activeEarnedIds])
   const showLegacyNote =
     legacyEarnedIds.length > 0 || hasLegacyEarnedIds(earnedIds)
+
+  useEffect(() => {
+    if (filter !== 'grade' || !source || !hfUserId) return
+    let cancelled = false
+    setReview(null)
+    setReviewErr('')
+    setReviewLoading(true)
+    apiGet(`/api/${source}/student/${hfUserId}/grade-review`)
+      .then((d) => {
+        if (!cancelled) setReview(d)
+      })
+      .catch((e) => {
+        if (!cancelled) setReviewErr(String(e.message || e))
+      })
+      .finally(() => {
+        if (!cancelled) setReviewLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [filter, source, hfUserId])
 
   const earnedCount = badges.filter((b) => earnedSet.has(b.id)).length
   const totalCount = badges.length
@@ -951,11 +977,13 @@ function BadgeAccordionPanel({
           </Stack>
 
           {filter === 'grade' ? (
-            <BadgeGradeSummary
-              gradeEstimate={gradeEstimate}
-              loading={loading}
+            <GradeReviewPanel
+              data={review}
+              loading={reviewLoading || loading}
+              err={reviewErr}
+              source={source}
               compact
-              showTitle
+              fallbackGrade={gradeEstimate}
             />
           ) : loading ? (
             <Box sx={{ py: 6, display: 'grid', placeItems: 'center' }}>
@@ -1754,6 +1782,8 @@ export default function Overview({
             badgeDefinitions={badgeDefinitions}
             gradeEstimate={gradeEstimate}
             loading={loading}
+            source={source}
+            hfUserId={hfUserId}
           />
         </Grid>
       </Grid>

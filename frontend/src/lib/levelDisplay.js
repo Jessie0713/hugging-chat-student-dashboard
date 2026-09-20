@@ -85,8 +85,8 @@ export function formatFitStatus(fitStatus) {
 }
 
 /** Chip 樣式：與圓餅圖同色 */
-export function getFitStatusChipProps(fitStatus) {
-  const matched = classifyPracticeFit(fitStatus) === 'matched'
+export function getFitStatusChipProps(fitStatus, context) {
+  const matched = classifyPracticeFit(fitStatus, context) === 'matched'
   return {
     sx: {
       bgcolor: matched ? FIT_MATCH_COLOR : FIT_UNMATCH_COLOR,
@@ -96,10 +96,27 @@ export function getFitStatusChipProps(fitStatus) {
   }
 }
 
-/** 圓餅圖 / 列表篩選：in_band + too_easy → matched，其餘 → unmatched */
-export function classifyPracticeFit(fitStatus) {
-  const s = normalizeFitStatus(fitStatus)
-  if (s === 'in_band' || s === 'too_easy') return 'matched'
+/**
+ * 固定等級適配：評估大階 ≥ 所選等級即符合。
+ * 例如選進階，進階／高階都算符合；低於所選才算不符合。
+ * 沒有等級資料時退回 fitStatus：in_band / too_easy / above。
+ */
+export function classifyPracticeFit(fitStatus, context) {
+  const item =
+    fitStatus && typeof fitStatus === 'object' && !Array.isArray(fitStatus)
+      ? fitStatus
+      : context
+  const status =
+    item && typeof fitStatus === 'object' ? item.fitStatus : fitStatus
+  const target = String(item?.targetProductTier || '').trim()
+  const assessed = item?.levelKey ? cefrToTier(item.levelKey) : ''
+  const selectedIdx = TIER_ORDER.indexOf(target)
+  const assessedIdx = TIER_ORDER.indexOf(assessed)
+  if (selectedIdx >= 0 && assessedIdx >= 0) {
+    return assessedIdx >= selectedIdx ? 'matched' : 'unmatched'
+  }
+  const s = normalizeFitStatus(status)
+  if (s === 'in_band' || s === 'too_easy' || s === 'above') return 'matched'
   return 'unmatched'
 }
 

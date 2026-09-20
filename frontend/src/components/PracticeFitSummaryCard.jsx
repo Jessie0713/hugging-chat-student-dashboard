@@ -31,7 +31,7 @@ export default function PracticeFitSummaryCard({
     let matchedCount = 0
     let unmatchedCount = 0
     for (const item of recentPractice) {
-      if (classifyPracticeFit(item.fitStatus) === 'matched') {
+      if (classifyPracticeFit(item) === 'matched') {
         matchedCount += 1
       } else {
         unmatchedCount += 1
@@ -80,7 +80,7 @@ export default function PracticeFitSummaryCard({
               : '尚無評估紀錄'}
         </Typography>
         <Typography sx={{ ...type.caption, display: 'block', mb: 1 }}>
-          練習與所選等級的符合情形
+          達所選等級或以上即算符合（選進階則高階也算）
         </Typography>
 
         {loading ? (

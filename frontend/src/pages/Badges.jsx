@@ -12,7 +12,7 @@ import {
   Typography,
 } from '@mui/material'
 import { apiGet } from '../lib/api'
-import BadgeGradeCard from '../components/BadgeGradeCard'
+import GradeReviewPanel from '../components/GradeReviewPanel'
 import {
   filterActiveEarnedIds,
   hydrateBadgeDefinitions,
@@ -77,6 +77,9 @@ export default function Badges() {
   const { source, hfUserId } = useParams()
   const [data, setData] = useState(null)
   const [err, setErr] = useState('')
+  const [review, setReview] = useState(null)
+  const [reviewErr, setReviewErr] = useState('')
+  const [reviewLoading, setReviewLoading] = useState(true)
   const loading = !data && !err
 
   useEffect(() => {
@@ -85,6 +88,9 @@ export default function Badges() {
       if (!cancelled) {
         setErr('')
         setData(null)
+        setReview(null)
+        setReviewErr('')
+        setReviewLoading(true)
       }
     })
     apiGet(`/api/${source}/student/${hfUserId}/badges`)
@@ -93,6 +99,16 @@ export default function Badges() {
       })
       .catch((e) => {
         if (!cancelled) setErr(String(e))
+      })
+    apiGet(`/api/${source}/student/${hfUserId}/grade-review`)
+      .then((d) => {
+        if (!cancelled) setReview(d)
+      })
+      .catch((e) => {
+        if (!cancelled) setReviewErr(String(e.message || e))
+      })
+      .finally(() => {
+        if (!cancelled) setReviewLoading(false)
       })
     return () => {
       cancelled = true
@@ -134,8 +150,18 @@ export default function Badges() {
       </Typography>
 
       <Grid container spacing={2} sx={{ mb: 2 }}>
-        <Grid item xs={12} md={5}>
-          <BadgeGradeCard gradeEstimate={gradeEstimate} loading={loading} />
+        <Grid item xs={12} md={7}>
+          <Card variant='outlined'>
+            <CardContent>
+              <GradeReviewPanel
+                data={review}
+                loading={reviewLoading}
+                err={reviewErr}
+                source={source}
+                fallbackGrade={gradeEstimate}
+              />
+            </CardContent>
+          </Card>
         </Grid>
       </Grid>
 
