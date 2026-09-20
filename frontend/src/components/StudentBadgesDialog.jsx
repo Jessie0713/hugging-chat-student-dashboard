@@ -17,6 +17,7 @@ export default function StudentBadgesDialog({
   source,
   hfUserId,
   displayName,
+  onReviewed,
 }) {
   const [data, setData] = useState(null)
   const [err, setErr] = useState('')
@@ -30,7 +31,9 @@ export default function StudentBadgesDialog({
     const qs = `source=${encodeURIComponent(source)}&hfUserId=${encodeURIComponent(hfUserId)}`
     apiGet(`/api/teacher/grade-review?${qs}`, { headers: teacherHeaders() })
       .then((d) => {
-        if (!cancelled) setData(d)
+        if (cancelled) return
+        setData(d)
+        onReviewed?.(d)
       })
       .catch((e) => {
         if (!cancelled) setErr(String(e.message || e))

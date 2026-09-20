@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link as RouterLink, useParams } from 'react-router-dom'
 import {
   Box,
@@ -107,6 +107,69 @@ const stickyRightBody = {
 }
 
 const midCell = { whiteSpace: 'nowrap' }
+
+function histLabel(score) {
+  const x = Math.max(0, Number(score) || 0)
+  if (x >= 100) return '100+'
+  const lo = Math.floor(x / 10) * 10
+  return `${lo}–${lo + 9}`
+}
+
+function rebuildSummary(students, prev = {}) {
+  const n = students.length
+  const scoreHistogram = Object.fromEntries(SCORE_HIST_LABELS.map((label) => [label, 0]))
+  let total = 0
+  let topics = 0
+  let adv = 0
+  let course = 0
+  for (const s of students) {
+    total += Number(s.totalScore || 0)
+    course += Number(s.courseScore || 0)
+    topics += Number(s.completedTopicCount || 0)
+    adv += Number(s.secondAdvancedCount || 0)
+    const label = histLabel(s.totalScore)
+    if (label in scoreHistogram) scoreHistogram[label] += 1
+  }
+  const avg = (v) => (n ? Math.round((v / n) * 100) / 100 : 0)
+  return {
+    ...prev,
+    avgTotalScore: avg(total),
+    avgCourseScore: avg(course),
+    avgCompletedTopics: avg(topics),
+    avgSecondAdvanced: avg(adv),
+    scoreHistogram,
+  }
+}
+
+function applyReviewToStudent(s, review) {
+  const g = review?.grade || {}
+  return {
+    ...s,
+    totalScore: g.totalScore ?? g.score ?? review?.score ?? s.totalScore,
+    courseScore: g.courseScore ?? s.courseScore,
+    milestoneScore: g.milestoneScore ?? s.milestoneScore,
+    guardianScore: g.guardianScore ?? s.guardianScore,
+    extraBonus: g.extraBonus ?? s.extraBonus,
+    scoreLabel: g.scoreLabel ?? s.scoreLabel,
+    completedTopicCount: review?.scoredTopicCount ?? g.completedTopicCount ?? s.completedTopicCount,
+    secondAdvancedCount: g.secondAdvancedCount ?? s.secondAdvancedCount,
+    topicFitCached: true,
+  }
+}
+
+function applyReviewToRoster(data, student, review) {
+  if (!data || !student) return data
+  const students = (data.students || []).map((s) =>
+    s.hfUserId === student.hfUserId && s.source === student.source
+      ? applyReviewToStudent(s, review)
+      : s,
+  )
+  return {
+    ...data,
+    students,
+    summary: rebuildSummary(students, data.summary),
+  }
+}
 
 function pct(v) {
   if (v == null || v === '') return null
@@ -281,11 +344,13 @@ export default function TeacherRoster() {
   const [err, setErr] = useState('')
   const [q, setQ] = useState('')
   const [badgeStudent, setBadgeStudent] = useState(null)
+  const syncKeyRef = useRef('')
 
   useEffect(() => {
     let cancelled = false
     setErr('')
     setData(null)
+    syncKeyRef.current = ''
     apiGet(`/api/teacher/roster?source=${encodeURIComponent(source || 'rolling_level')}`, {
       headers: teacherHeaders(),
     })
@@ -299,6 +364,41 @@ export default function TeacherRoster() {
       cancelled = true
     }
   }, [source])
+
+  useEffect(() => {
+    if (!data?.students?.length) return
+    const key = `${source}:${data.students.map((s) => `${s.source}:${s.hfUserId}`).join('|')}`
+    if (syncKeyRef.current === key) return
+    const pending = data.students.filter(
+      (s) =>
+        !s.topicFitCached &&
+        Number(s.completedTopicCount || 0) + Number(s.secondAdvancedCount || 0) > 0,
+    )
+    if (!pending.length) {
+      syncKeyRef.current = key
+      return
+    }
+    let cancelled = false
+    syncKeyRef.current = key
+    ;(async () => {
+      for (const s of pending) {
+        if (cancelled) return
+        try {
+          const qs = `source=${encodeURIComponent(s.source)}&hfUserId=${encodeURIComponent(s.hfUserId)}`
+          const review = await apiGet(`/api/teacher/grade-review?${qs}`, {
+            headers: teacherHeaders(),
+          })
+          if (cancelled) return
+          setData((prev) => applyReviewToRoster(prev, s, review))
+        } catch {
+          /* keep current score */
+        }
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [source, data])
 
   const students = data?.students || []
   const summary = data?.summary || {}
@@ -626,6 +726,9 @@ export default function TeacherRoster() {
         source={badgeStudent?.source}
         hfUserId={badgeStudent?.hfUserId}
         displayName={badgeStudent?.displayName}
+        onReviewed={(review) => {
+          setData((prev) => applyReviewToRoster(prev, badgeStudent, review))
+        }}
       />
     </Stack>
   )

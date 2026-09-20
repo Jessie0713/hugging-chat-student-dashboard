@@ -385,18 +385,29 @@ def _summarize_user(
     second_advanced_ids = set((profile or {}).get("secondAdvancedIds") or set())
     level_key = (profile or {}).get("levelKey")
     practice_tier = (profile or {}).get("practiceTier") or "尚未評級"
-    fitted = adjust_course_score_for_topic_fit(
-        source,
-        user,
-        completed_ids,
-        second_advanced_ids,
-        usage,
-        talk_by_assistant,
-        talk_by_conversation,
-    )
-    grade = fitted["grade"]
-    completed = int(fitted["scoredTopicCount"])
-    second_advanced = int(fitted["scoredAdvancedCount"])
+    cache = user.get("topicFitReview") if isinstance(user.get("topicFitReview"), dict) else {}
+    cached_grade = cache.get("grade") if isinstance(cache.get("grade"), dict) else None
+    if cached_grade is not None and cache.get("score") is not None:
+        grade = cached_grade
+        completed = int(cache.get("scoredTopicCount") or grade.get("completedTopicCount") or 0)
+        second_advanced = int(
+            cache.get("secondAdvancedCount") or grade.get("secondAdvancedCount") or 0
+        )
+        topic_fit_cached = True
+    else:
+        fitted = adjust_course_score_for_topic_fit(
+            source,
+            user,
+            completed_ids,
+            second_advanced_ids,
+            usage,
+            talk_by_assistant,
+            talk_by_conversation,
+        )
+        grade = fitted["grade"]
+        completed = int(fitted["scoredTopicCount"])
+        second_advanced = int(fitted["scoredAdvancedCount"])
+        topic_fit_cached = False
     latest = _as_utc((conv or {}).get("latestAt") or user.get("updatedAt"))
     return {
         "hfUserId": hf,
@@ -423,6 +434,7 @@ def _summarize_user(
         "guardianScore": grade.get("guardianScore"),
         "extraBonus": grade.get("extraBonus"),
         "scoreLabel": grade.get("scoreLabel"),
+        "topicFitCached": topic_fit_cached,
         "latestAt": latest.isoformat() if latest else None,
         "email": _email_from_mongo_user(user),
         "displayName": "",
@@ -513,6 +525,7 @@ async def _roster_for_source(source: str) -> list[dict]:
             "username": 1,
             "mail": 1,
             "agentCefr": 1,
+            "topicFitReview": 1,
         },
     ).to_list(length=5000)
 

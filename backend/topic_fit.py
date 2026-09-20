@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import re
+from datetime import datetime, timezone
 from typing import Any
 
 from bson import ObjectId
@@ -311,6 +312,22 @@ def _theme_name_for(assistant_id: str) -> str:
     return next((t["name"] for t in COURSE_BADGE_THEMES if t["id"] == assistant_id), assistant_id)
 
 
+def _lookup_conv_talk(talk_by_conversation: dict[str, str] | None, conv_id: str | None) -> str:
+    if not conv_id:
+        return ""
+    store = talk_by_conversation or {}
+    keys = {str(conv_id).strip()}
+    try:
+        keys.add(str(ObjectId(str(conv_id))))
+    except Exception:
+        pass
+    for key in keys:
+        talk = store.get(key)
+        if talk:
+            return talk
+    return ""
+
+
 def _fast_off_topic_ids(
     source: str,
     user: dict,
@@ -327,11 +344,10 @@ def _fast_off_topic_ids(
 
     off: set[str] = set()
     for aid, conv_id in pairs:
-        talk = ""
-        if conv_id:
-            talk = talk_by_conversation.get(str(conv_id)) or ""
-        if not talk:
-            talk = talk_by_assistant.get(str(aid)) or ""
+        if rolling:
+            talk = _lookup_conv_talk(talk_by_conversation, conv_id)
+        else:
+            talk = (talk_by_assistant or {}).get(str(aid)) or ""
         talk = _clip(talk, _MAX_CHARS_PER_ROOM)
         if not talk.strip():
             off.add(str(aid))
@@ -581,7 +597,7 @@ async def review_student_grade(db, source: str, hf_user_id: str) -> dict[str, An
         if str(t.get("assistantId") or "") not in reviewed_ids
     ]
 
-    return {
+    result = {
         "source": source,
         "hfUserId": hf,
         "reviewMode": review_mode,
@@ -605,3 +621,22 @@ async def review_student_grade(db, source: str, hf_user_id: str) -> dict[str, An
         ],
         "pendingRooms": pending,
     }
+    try:
+        await db["users"].update_one(
+            {"_id": user["_id"]},
+            {
+                "$set": {
+                    "topicFitReview": {
+                        "score": adjusted_score,
+                        "grade": adjusted,
+                        "scoredTopicCount": scored_completed,
+                        "secondAdvancedCount": adjusted.get("secondAdvancedCount"),
+                        "reviewMode": review_mode,
+                        "updatedAt": datetime.now(timezone.utc),
+                    }
+                }
+            },
+        )
+    except Exception:
+        pass
+    return result
