@@ -17,13 +17,12 @@ from course_score import (
     DASHBOARD_ENTER_EVENT,
     DASHBOARD_PICK_EVENT,
     DASHBOARD_USAGE_WINDOW_HOURS,
-    compute_course_score,
     is_course_badge_theme,
     is_level_advanced,
 )
 from db import fetch_all
 from mongo_db import get_db_by_source, normalize_source
-from topic_fit import review_student_grade
+from topic_fit import adjust_course_score_for_topic_fit, review_student_grade
 from student_api import (
     _effective_complete_assistant_ids,
     _normalize_achievement_badge_stats,
@@ -190,13 +189,14 @@ def _pair_usage(docs: list[dict]) -> int:
     return matched
 
 
-async def _conversation_metrics_by_user(db) -> dict[str, dict]:
-    """user mongo id → 對話數、語言 KPI、最近活動。"""
+async def _conversation_bundle_by_user(db) -> tuple[dict[str, dict], dict[str, dict], dict[str, dict]]:
+    """user mongo id → 語言 KPI、assistant 發言、conversation 發言。"""
     try:
         convs = await db["conversations"].find(
             {},
             {
                 "userId": 1,
+                "assistantId": 1,
                 "messages.from": 1,
                 "messages.content": 1,
                 "messages.createdAt": 1,
@@ -208,7 +208,7 @@ async def _conversation_metrics_by_user(db) -> dict[str, dict]:
             },
         ).to_list(length=12000)
     except Exception:
-        return {}
+        return {}, {}, {}
 
     by_user: dict[str, list[dict]] = defaultdict(list)
     for conv in convs:
@@ -216,7 +216,33 @@ async def _conversation_metrics_by_user(db) -> dict[str, dict]:
         if uid is None:
             continue
         by_user[str(uid)].append(conv)
-    return {uid: _language_stats_from_convs(items) for uid, items in by_user.items()}
+
+    metrics: dict[str, dict] = {}
+    talk_assistant: dict[str, dict[str, str]] = {}
+    talk_conv: dict[str, dict[str, str]] = {}
+    for uid, items in by_user.items():
+        metrics[uid] = _language_stats_from_convs(items)
+        by_aid: dict[str, list[str]] = defaultdict(list)
+        by_cid: dict[str, str] = {}
+        for conv in items:
+            parts: list[str] = []
+            for _day, text in iter_user_message_texts([conv]):
+                if text:
+                    parts.append(text)
+            if not parts:
+                for m in conv.get("messages") or []:
+                    if m.get("from") == "user":
+                        t = message_plain_text(m.get("content"))
+                        if t:
+                            parts.append(t)
+            talk = "\n".join(parts)
+            aid = conv.get("assistantId")
+            if aid is not None and talk:
+                by_aid[str(aid)].append(talk)
+            by_cid[str(conv["_id"])] = talk
+        talk_assistant[uid] = {aid: "\n".join(chunks) for aid, chunks in by_aid.items()}
+        talk_conv[uid] = by_cid
+    return metrics, talk_assistant, talk_conv
 
 
 def _language_stats_from_convs(convs: list[dict]) -> dict[str, Any]:
@@ -325,6 +351,7 @@ async def _cefr_profile_by_user(
         level_key = typical_key(last_keys)
         eff = oid_to_effective.get(uid) or set()
         n = 0
+        adv_ids: set[str] = set()
         for aid, ratings in by_aid.items():
             if not is_course_badge_theme(aid):
                 continue
@@ -334,8 +361,10 @@ async def _cefr_profile_by_user(
                 continue
             if is_level_advanced(ratings[1]):
                 n += 1
+                adv_ids.add(str(aid))
         out[uid] = {
             "secondAdvanced": n,
+            "secondAdvancedIds": adv_ids,
             "levelKey": level_key,
             "practiceTier": _practice_tier_from_level_key(level_key) or "尚未評級",
         }
@@ -348,15 +377,28 @@ def _summarize_user(
     conv: dict | None,
     usage: int,
     profile: dict | None,
+    talk_by_assistant: dict[str, str] | None = None,
+    talk_by_conversation: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     hf = normalize_hf_user_id(str(user.get("hfUserId") or ""))
     stats = _normalize_achievement_badge_stats((user.get("badge") or {}).get("stats") or {})
-    completed = int(stats.get("completedTopicCount") or 0)
+    completed_ids = _effective_complete_assistant_ids(stats)
     total_messages = int(stats.get("totalMessages") or 0)
-    second_advanced = int((profile or {}).get("secondAdvanced") or 0)
+    second_advanced_ids = set((profile or {}).get("secondAdvancedIds") or set())
     level_key = (profile or {}).get("levelKey")
     practice_tier = (profile or {}).get("practiceTier") or "尚未評級"
-    grade = compute_course_score(completed, usage, second_advanced)
+    fitted = adjust_course_score_for_topic_fit(
+        source,
+        user,
+        completed_ids,
+        second_advanced_ids,
+        usage,
+        talk_by_assistant,
+        talk_by_conversation,
+    )
+    grade = fitted["grade"]
+    completed = int(fitted["scoredTopicCount"])
+    second_advanced = int(fitted["scoredAdvancedCount"])
     latest = _as_utc((conv or {}).get("latestAt") or user.get("updatedAt"))
     return {
         "hfUserId": hf,
@@ -464,10 +506,19 @@ async def _roster_for_source(source: str) -> list[dict]:
     db = get_db_by_source(src)
     users = await db["users"].find(
         {},
-        {"hfUserId": 1, "badge": 1, "updatedAt": 1, "email": 1, "emails": 1, "username": 1, "mail": 1},
+        {
+            "hfUserId": 1,
+            "badge": 1,
+            "updatedAt": 1,
+            "email": 1,
+            "emails": 1,
+            "username": 1,
+            "mail": 1,
+            "agentCefr": 1,
+        },
     ).to_list(length=5000)
 
-    conv_map = await _conversation_metrics_by_user(db)
+    conv_map, talk_assistant, talk_conv = await _conversation_bundle_by_user(db)
     usage_map = await _usage_by_hf(db)
     cefr_map = await _cefr_profile_by_user(db, users)
 
@@ -486,6 +537,8 @@ async def _roster_for_source(source: str) -> list[dict]:
                 conv_map.get(uid),
                 int(usage_map.get(hf) or 0),
                 cefr_map.get(uid) or {},
+                talk_assistant.get(uid) or {},
+                talk_conv.get(uid) or {},
             )
         )
     rows.sort(

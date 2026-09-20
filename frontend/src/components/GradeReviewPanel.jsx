@@ -10,18 +10,18 @@ export function gradeReviewCopy(source) {
       loading: '正在檢查有效對話是否切題…',
       sectionTitle: '有效對話切題檢查',
       empty: '尚無有效對話可審查。',
-      allOk: '有效對話均與設定主題一致。獎章與成績與主系統相同。',
+      allOk: '有效對話均與設定主題一致。',
       banner:
-        '雖符合有效對話，但內容不符合主題，以下主題不計入成績。請到主系統重新開聊天室重做對話練習：',
+        '內容不符合主題，以下主題不計入成績。請到主系統重新開聊天室重做對話練習：',
     }
   }
   return {
     loading: '正在檢查評級聊天室是否切題…',
     sectionTitle: '評級聊天室切題檢查',
     empty: '尚無評級聊天室可審查。',
-    allOk: '評級對話均與設定主題一致。獎章與成績與主系統相同。',
+    allOk: '評級對話均與設定主題一致。',
     banner:
-      '雖已完成評級，但內容不符合主題，以下主題不計入成績。請到主系統重新開聊天室重做對話練習：',
+      '內容不符合主題，以下主題不計入成績。請到主系統重新開聊天室重做對話練習：',
   }
 }
 
@@ -35,10 +35,7 @@ export default function GradeReviewPanel({
 }) {
   const copy = gradeReviewCopy(source)
   const gradeEstimate = data?.grade || fallbackGrade
-  const originalGrade = data?.originalGrade
-  const originalScore = originalGrade?.score ?? originalGrade?.totalScore
   const adjustedScore = gradeEstimate?.score ?? gradeEstimate?.totalScore
-  const scoreAdjusted = Boolean(data?.scoreAdjusted)
   const redoRooms = data?.redoRooms || []
   const reviewedRooms = data?.reviewedRooms || data?.effectiveRooms || []
 
@@ -91,9 +88,7 @@ export default function GradeReviewPanel({
             ))}
           </Stack>
           <Typography sx={{ mt: 1, fontSize: 13, fontWeight: 800, color: colors.ink }}>
-            {scoreAdjusted
-              ? `主系統仍顯示 ${originalScore} 分（獎章已拿到、不收回）。實際計分 ${adjustedScore} 分，不符主題不給該主題分數。`
-              : '獎章已拿到、不收回；該主題不計入成績。請到主系統重做對話練習。'}
+            {adjustedScore != null ? `成績 ${adjustedScore} 分。不符主題不計入成績。` : '不符主題不計入成績。'}
           </Typography>
         </Box>
       ) : reviewedRooms.length ? (
@@ -108,7 +103,7 @@ export default function GradeReviewPanel({
 
       {redoRooms.length ? (
         <Typography sx={{ fontSize: 13, fontWeight: 800, color: colors.muted }}>
-          以下為扣除不符主題後的成績；獎章仍與主系統相同。
+          以下為切題檢查後的成績。
         </Typography>
       ) : null}
 

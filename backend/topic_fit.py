@@ -245,62 +245,6 @@ async def _talk_for_room(
     return await _user_talk_for_assistant(db, user_oid, assistant_id)
 
 
-async def _user_talk_for_conversation(db, user_oid: ObjectId, conversation_id: str) -> str:
-    ids: list[Any] = [conversation_id]
-    try:
-        ids.append(ObjectId(str(conversation_id)))
-    except Exception:
-        pass
-    conv = await db["conversations"].find_one(
-        {"_id": {"$in": ids}, "userId": user_oid},
-        {"messages.from": 1, "messages.content": 1},
-    )
-    if not conv:
-        return ""
-    parts: list[str] = []
-    for _day, text in iter_user_message_texts([conv]):
-        if text:
-            parts.append(text)
-    if not parts:
-        for m in conv.get("messages") or []:
-            if m.get("from") == "user":
-                t = message_plain_text(m.get("content"))
-                if t:
-                    parts.append(t)
-    return _clip("\n".join(parts), _MAX_CHARS_PER_ROOM)
-
-
-def _rated_course_rooms(user: dict) -> dict[str, str | None]:
-    """變動等級：課程主題 → 評級聊天室 conversationId。"""
-    out: dict[str, str | None] = {}
-    for entry in user.get("agentCefr") or []:
-        if not isinstance(entry, dict):
-            continue
-        if not entry.get("levelKey"):
-            continue
-        aid = entry.get("assistantId")
-        if aid is None or not is_course_badge_theme(str(aid)):
-            continue
-        conv_id = entry.get("activeCefrConversationId")
-        out[str(aid)] = str(conv_id).strip() if conv_id else None
-    return out
-
-
-async def _talk_for_room(
-    db,
-    user_oid: ObjectId,
-    assistant_id: str,
-    conversation_id: str | None,
-    prefer_conversation: bool,
-) -> str:
-    if prefer_conversation and conversation_id:
-        talk = await _user_talk_for_conversation(db, user_oid, conversation_id)
-        if talk:
-            return talk
-        return ""
-    return await _user_talk_for_assistant(db, user_oid, assistant_id)
-
-
 def _normalize_theme_name(name: str) -> str:
     return re.sub(r"[^a-z0-9\u4e00-\u9fff]+", "", (name or "").lower())
 
@@ -358,6 +302,72 @@ def _apply_theme_guard(row: dict, hit: dict) -> tuple[bool, str]:
         return False, detail
 
     return on_topic, reason
+
+
+def _theme_name_for(assistant_id: str) -> str:
+    return next((t["name"] for t in COURSE_BADGE_THEMES if t["id"] == assistant_id), assistant_id)
+
+
+def _fast_off_topic_ids(
+    source: str,
+    user: dict,
+    completed_ids: set[str],
+    talk_by_assistant: dict[str, str],
+    talk_by_conversation: dict[str, str],
+) -> set[str]:
+    """名單用：不呼叫 Azure，用關鍵詞擋掉明顯不符主題的房間。"""
+    rolling = _is_rolling(source)
+    if rolling:
+        pairs = list(_rated_course_rooms(user).items())
+    else:
+        pairs = [(aid, None) for aid in completed_ids]
+
+    off: set[str] = set()
+    for aid, conv_id in pairs:
+        talk = ""
+        if conv_id:
+            talk = talk_by_conversation.get(str(conv_id)) or ""
+        if not talk:
+            talk = talk_by_assistant.get(str(aid)) or ""
+        talk = _clip(talk, _MAX_CHARS_PER_ROOM)
+        if not talk.strip():
+            off.add(str(aid))
+            continue
+        on_topic, _ = _apply_theme_guard(
+            {"themeName": _theme_name_for(str(aid)), "studentTalk": talk},
+            {"onTopic": True, "reason": "", "actualTheme": ""},
+        )
+        if not on_topic:
+            off.add(str(aid))
+    return off
+
+
+def adjust_course_score_for_topic_fit(
+    source: str,
+    user: dict,
+    completed_ids: set[str],
+    second_advanced_ids: set[str],
+    dashboard_usage: int,
+    talk_by_assistant: dict[str, str] | None = None,
+    talk_by_conversation: dict[str, str] | None = None,
+) -> dict[str, Any]:
+    completed_ids = {str(x) for x in (completed_ids or set())}
+    second_advanced_ids = {str(x) for x in (second_advanced_ids or set())}
+    off = _fast_off_topic_ids(
+        source,
+        user,
+        completed_ids,
+        talk_by_assistant or {},
+        talk_by_conversation or {},
+    )
+    scored_completed = len(completed_ids - off)
+    scored_adv = len(second_advanced_ids - off)
+    return {
+        "grade": compute_course_score(scored_completed, dashboard_usage, scored_adv),
+        "offTopicIds": off,
+        "scoredTopicCount": scored_completed,
+        "scoredAdvancedCount": scored_adv,
+    }
 
 
 def _parse_rooms_json(text: str) -> dict[str, dict]:
