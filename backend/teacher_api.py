@@ -355,8 +355,6 @@ async def _cefr_profile_by_user(
         for aid, ratings in by_aid.items():
             if not is_course_badge_theme(aid):
                 continue
-            if aid not in eff:
-                continue
             if len(ratings) < 2:
                 continue
             if is_level_advanced(ratings[1]):

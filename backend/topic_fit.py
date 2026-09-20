@@ -301,6 +301,9 @@ def _apply_theme_guard(row: dict, hit: dict) -> tuple[bool, str]:
         detail = reason or f"發言偏向「{other_best}」，不符合「{assigned}」。"
         return False, detail
 
+    if (talk or "").strip() and assigned_hits == 0:
+        return False, reason or f"發言看不出「{assigned}」的主題內容。"
+
     return on_topic, reason
 
 
@@ -350,16 +353,20 @@ def adjust_course_score_for_topic_fit(
     dashboard_usage: int,
     talk_by_assistant: dict[str, str] | None = None,
     talk_by_conversation: dict[str, str] | None = None,
+    off_topic_ids: set[str] | None = None,
 ) -> dict[str, Any]:
     completed_ids = {str(x) for x in (completed_ids or set())}
     second_advanced_ids = {str(x) for x in (second_advanced_ids or set())}
-    off = _fast_off_topic_ids(
-        source,
-        user,
-        completed_ids,
-        talk_by_assistant or {},
-        talk_by_conversation or {},
-    )
+    if off_topic_ids is not None:
+        off = {str(x) for x in off_topic_ids}
+    else:
+        off = _fast_off_topic_ids(
+            source,
+            user,
+            completed_ids,
+            talk_by_assistant or {},
+            talk_by_conversation or {},
+        )
     scored_completed = len(completed_ids - off)
     scored_adv = len(second_advanced_ids - off)
     return {
@@ -540,19 +547,22 @@ async def review_student_grade(db, source: str, hf_user_id: str) -> dict[str, An
     original_completed = int(
         stats.get("completedTopicCount") or original.get("completedTopicCount") or 0
     )
-    scored_completed = len(completed_ids - off_topic_ids)
     dashboard_usage = int(
         original.get("dashboardUsageCount")
         or original.get("dashboardViewCount")
         or 0
     )
     adv_ids = await second_advanced_assistant_ids(db, user["_id"])
-    scored_adv = len({aid for aid in adv_ids if aid not in off_topic_ids})
-    adjusted = (
-        compute_course_score(scored_completed, dashboard_usage, scored_adv)
-        if off_topic_ids
-        else original
+    fitted = adjust_course_score_for_topic_fit(
+        source,
+        user,
+        completed_ids,
+        adv_ids,
+        dashboard_usage,
+        off_topic_ids=off_topic_ids,
     )
+    adjusted = fitted["grade"]
+    scored_completed = int(fitted["scoredTopicCount"])
     original_score = int(original.get("score") or original.get("totalScore") or 0)
     adjusted_score = int(adjusted.get("score") or 0)
 
