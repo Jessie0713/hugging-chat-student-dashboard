@@ -1,5 +1,5 @@
 # backend/topic_fit.py
-"""成績審查：點選成績時檢查對話是否切題。變動等級看評級聊天室，固定等級看有效對話。獎章不收回。"""
+"""成績審查：點選成績時檢查學生有沒有在練該主題。變動等級看評級聊天室，固定等級看有效對話。獎章不收回。合理延伸仍計分。"""
 from __future__ import annotations
 
 import json
@@ -35,13 +35,18 @@ REDO_INSTRUCTION_RATED = (
 )
 
 _MAX_CHARS_PER_ROOM = 1400
+REVIEW_VERSION = 2
+FIT_ON = "onTopic"
+FIT_RELATED = "related"
+FIT_OFF = "offTopic"
 
-# 各主題的辨識詞：用來擋住「把仿生學硬套到其他主題」這類誤判。
+# 各主題的辨識詞：只用來擋住「走錯教室」，不是口說必須講出的單字。
 THEME_KEYWORDS: dict[str, tuple[str, ...]] = {
     "Biomimicry Explainer": (
         "biomimicry", "biomimetic", "biomimic", "nature-inspir",
+        "inspired by nature", "nature inspired", "learn from nature",
         "仿生", "生物仿生", "生物學", "biology", "gecko", "lotus leaf", "velcro",
-        "kingfisher", "shark skin", "termite mound",
+        "kingfisher", "shark skin", "termite mound", "shinkansen", "bullet train",
     ),
     "Panama Canal Story": (
         "panama", "canal", "巴拿馬", "運河", "isthmus", "船閘", "lock system",
@@ -73,27 +78,34 @@ THEME_KEYWORDS: dict[str, tuple[str, ...]] = {
     ),
 }
 
-TOPIC_FIT_PROMPT = """你是嚴格的英語口說課助教。必須「逐間獨立」判斷，不可把某一間的內容或主題套用到其他間。
+TOPIC_FIT_PROMPT = """你是英語口說課助教。目標是鼓勵學生開口練習，只要有在練這個主題就給過；只有亂聊或走錯教室才判不符。必須逐間獨立判斷。
 
-課程主題彼此不同、不可互換：
+課程主題：
 {theme_list}
 
-每一筆只有該聊天室的學生發言。切題（onTopic=true）的唯一條件：學生發言的核心任務就是「這個」設定主題。
-- Panama Canal Story → 必須在談巴拿馬運河／運河工程故事
-- Biomimicry Explainer → 必須在談仿生設計（從自然學設計），不是泛泛生物學
-- EQ vs IQ Compare → 必須在比較 EQ 與 IQ
-- VR Treatment Talk → 必須在談虛擬實境治療
-- Can Machines Think? → 必須在談機器能否思考
-- Handmade vs Machine Debate → 必須在辯手工 vs 機器製造
-- Future Movement Planner → 必須在談未來移動／交通規劃
-- Product Design Talk → 必須在談產品設計
+每筆主要是學生發言。學生英文不精、沒講出主題專有名詞、或跟著助教把主題延伸到應用／生活／政策，都算有在練習。
 
-以下一律 onTopic=false：
-- 發言其實在談另一個課程主題（例如在運河／EQ／VR 聊天室聊仿生學或生物學）
-- 只是籠統的科學、環保、永續、科技閒聊
-- 把仿生學硬解釋成「也算永續／科技／機器／交通」來湊其他主題
-- 幾乎沒有針對該設定主題的實質發言
-不要找牽強關聯。不確定就判 false。
+fit 只能是 onTopic / related / offTopic：
+- onTopic：核心在練這個主題
+- related：有碰這個主題，後面延伸到應用或相關討論（仍算有練、要計分）
+- offTopic：大部分發言與這個主題無關，或其實在練另一個課程主題
+
+各主題怎樣算有練（含合理延伸）：
+- Biomimicry Explainer：問自然啟發的發明、翠鳥喙／新幹線、把仿生用到交通或設計
+- Panama Canal Story：巴拿馬運河、船閘、運河故事
+- VR Treatment Talk：虛擬實境治療、暴露治療
+- EQ vs IQ Compare：比較 EQ 與 IQ
+- Can Machines Think?：機器能否思考、圖靈測試
+- Handmade vs Machine Debate：手工 vs 機器製造
+- Future Movement Planner：未來移動／交通規劃（不是「仿生例子順便提到公車」）
+- Product Design Talk：產品設計
+
+只在這些情況用 offTopic：
+- 明顯在聊另一個課程主題（例如運河房一直在講仿生／生物學）
+- 幾乎沒有在練這個主題：週末計畫、遊戲、吃什麼、完全接不上的閒聊
+- 只剩寒暄、對助教問句答 yes/no，看不出主題
+
+不要因為沒出現英文關鍵詞就判 offTopic。跟著助教往深處聊仍是 related 或 onTopic。不確定就選 related，不要選 offTopic。
 
 只輸出 JSON：
 {{
@@ -101,9 +113,10 @@ TOPIC_FIT_PROMPT = """你是嚴格的英語口說課助教。必須「逐間獨�
     {{
       "assistantId": "字串，必須與資料相同",
       "themeName": "設定主題名稱，必須與資料相同",
-      "onTopic": false,
+      "fit": "onTopic",
+      "onTopic": true,
       "actualTheme": "學生實際最接近的課程主題名稱，對不上就寫 other",
-      "reason": "一句繁體中文：學生實際在談什麼，為何符合或不符設定主題"
+      "reason": "一句繁體中文：學生在練什麼，為何給過或請重做"
     }}
   ]
 }}
@@ -268,44 +281,58 @@ def _lookup_verdict(verdicts: dict[str, dict], row: dict, index: int | None = No
     return None
 
 
-def _apply_theme_guard(row: dict, hit: dict) -> tuple[bool, str]:
-    """LLM 若把別的主題（尤其仿生學）硬套過來，改判不符。"""
-    assigned = (row.get("themeName") or "").strip()
-    reason = str(hit.get("reason") or "").strip()
-    talk = str(row.get("studentTalk") or "")
-    blob = f"{talk}\n{reason}"
-    on_topic = bool(hit.get("onTopic"))
-    actual = str(hit.get("actualTheme") or "").strip()
+def _normalize_fit(hit: dict | None) -> str:
+    hit = hit or {}
+    raw = str(hit.get("fit") or "").strip().lower().replace("_", "").replace("-", "")
+    if raw in {"related", "partial", "borderline", "extension"}:
+        return FIT_RELATED
+    if raw in {"off", "offtopic", "false", "no"}:
+        return FIT_OFF
+    if raw in {"on", "ontopic", "true", "yes"}:
+        return FIT_ON
+    if hit.get("onTopic") is True:
+        return FIT_ON
+    if hit.get("onTopic") is False:
+        return FIT_OFF
+    return FIT_ON
+
+
+def _other_theme_hits(assigned: str, text: str) -> tuple[str, int]:
     assigned_key = _normalize_theme_name(assigned)
-    actual_key = _normalize_theme_name(actual)
-    known = {
-        _normalize_theme_name(t["name"]): t["name"] for t in COURSE_BADGE_THEMES
-    }
-
-    if actual_key and actual_key not in {"other", "none", "unknown", ""}:
-        if actual_key in known and actual_key != assigned_key:
-            detail = reason or f"學生實際在談「{known[actual_key]}」，不是「{assigned}」。"
-            return False, detail
-
-    assigned_hits = _theme_keyword_hits(assigned, blob)
     other_best = ""
     other_hits = 0
     for t in COURSE_BADGE_THEMES:
         if _normalize_theme_name(t["name"]) == assigned_key:
             continue
-        n = _theme_keyword_hits(t["name"], blob)
+        n = _theme_keyword_hits(t["name"], text)
         if n > other_hits:
             other_hits = n
             other_best = t["name"]
+    return other_best, other_hits
 
-    if other_hits >= 1 and other_hits > assigned_hits:
-        detail = reason or f"發言偏向「{other_best}」，不符合「{assigned}」。"
-        return False, detail
 
-    if (talk or "").strip() and assigned_hits == 0:
-        return False, reason or f"發言看不出「{assigned}」的主題內容。"
+def _apply_theme_guard(row: dict, hit: dict) -> tuple[bool, str, str]:
+    """只擋走錯教室；不因缺少關鍵詞或合理延伸而扣分。"""
+    assigned = (row.get("themeName") or "").strip()
+    reason = str(hit.get("reason") or "").strip()
+    talk = str(row.get("studentTalk") or "")
+    fit = _normalize_fit(hit)
+    assigned_hits = _theme_keyword_hits(assigned, talk)
+    other_best, other_hits = _other_theme_hits(assigned, talk)
+    wrong_theme = other_hits >= 2 and other_hits >= assigned_hits + 2
 
-    return on_topic, reason
+    if wrong_theme:
+        detail = reason or f"發言明顯偏向「{other_best}」，不是在練「{assigned}」。"
+        return False, detail, FIT_OFF
+
+    if fit == FIT_OFF:
+        if assigned_hits >= 1:
+            return True, reason or f"學生有談到「{assigned}」相關內容。", FIT_RELATED
+        return False, reason or f"內容與「{assigned}」無關。", FIT_OFF
+
+    if fit == FIT_RELATED:
+        return True, reason or f"有在練「{assigned}」，後續為合理延伸。", FIT_RELATED
+    return True, reason or f"內容與「{assigned}」相符。", FIT_ON
 
 
 def _theme_name_for(assistant_id: str) -> str:
@@ -335,7 +362,7 @@ def _fast_off_topic_ids(
     talk_by_assistant: dict[str, str],
     talk_by_conversation: dict[str, str],
 ) -> set[str]:
-    """名單用：不呼叫 Azure，用關鍵詞擋掉明顯不符主題的房間。"""
+    """名單用：不呼叫 Azure。沒有發言或明顯走錯教室才不計分。"""
     rolling = _is_rolling(source)
     if rolling:
         pairs = list(_rated_course_rooms(user).items())
@@ -352,9 +379,9 @@ def _fast_off_topic_ids(
         if not talk.strip():
             off.add(str(aid))
             continue
-        on_topic, _ = _apply_theme_guard(
+        on_topic, _, _fit = _apply_theme_guard(
             {"themeName": _theme_name_for(str(aid)), "studentTalk": talk},
-            {"onTopic": True, "reason": "", "actualTheme": ""},
+            {"onTopic": True, "fit": FIT_ON, "reason": "", "actualTheme": ""},
         )
         if not on_topic:
             off.add(str(aid))
@@ -414,7 +441,8 @@ def _parse_rooms_json(text: str) -> dict[str, dict]:
         aid = str(row.get("assistantId") or "").strip()
         theme_name = str(row.get("themeName") or row.get("assignedTheme") or "").strip()
         parsed_row = {
-            "onTopic": bool(row.get("onTopic")),
+            "fit": _normalize_fit(row),
+            "onTopic": _normalize_fit(row) != FIT_OFF,
             "actualTheme": str(row.get("actualTheme") or "").strip(),
             "reason": str(row.get("reason") or "").strip(),
         }
@@ -505,6 +533,7 @@ async def review_student_grade(db, source: str, hf_user_id: str) -> dict[str, An
             judged.append({
                 **row,
                 "onTopic": False,
+                "fit": FIT_OFF,
                 "reason": f"幾乎沒有學生發言。{redo_text}",
                 "needsRedo": True,
             })
@@ -520,17 +549,21 @@ async def review_student_grade(db, source: str, hf_user_id: str) -> dict[str, An
             hit = _lookup_verdict(verdicts, row, index)
             if hit is None:
                 on_topic = True
-                reason = "切題審查失敗，暫不標示。"
+                fit = FIT_ON
+                reason = "切題審查失敗，暫不扣分。"
             else:
-                on_topic, detail = _apply_theme_guard(row, hit)
-                if on_topic:
-                    reason = detail or "內容與設定主題一致。"
+                on_topic, detail, fit = _apply_theme_guard(row, hit)
+                if on_topic and fit == FIT_RELATED:
+                    reason = detail or "有在練這個主題，後續為合理延伸。"
+                elif on_topic:
+                    reason = detail or "有在練設定主題。"
                 else:
-                    reason = f"{redo_text}{detail or '內容與設定主題不符。'}"
+                    reason = f"{redo_text}{detail or '內容與設定主題無關。'}"
             judged.append({
                 **row,
                 "studentTalk": _clip(row["studentTalk"], 280),
                 "onTopic": on_topic,
+                "fit": fit,
                 "reason": reason,
                 "needsRedo": not on_topic,
             })
@@ -546,6 +579,7 @@ async def review_student_grade(db, source: str, hf_user_id: str) -> dict[str, An
             "assistantId": r["assistantId"],
             "themeName": r["themeName"],
             "onTopic": bool(r.get("onTopic")),
+            "fit": r.get("fit") or (FIT_OFF if r.get("needsRedo") else FIT_ON),
             "needsRedo": bool(r.get("needsRedo")),
             "reason": r.get("reason") or "",
             "studentTalkPreview": r.get("studentTalk") or "",
@@ -632,6 +666,7 @@ async def review_student_grade(db, source: str, hf_user_id: str) -> dict[str, An
                         "scoredTopicCount": scored_completed,
                         "secondAdvancedCount": adjusted.get("secondAdvancedCount"),
                         "reviewMode": review_mode,
+                        "reviewVersion": REVIEW_VERSION,
                         "updatedAt": datetime.now(timezone.utc),
                     }
                 }

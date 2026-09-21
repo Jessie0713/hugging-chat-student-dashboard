@@ -22,7 +22,7 @@ from course_score import (
 )
 from db import fetch_all
 from mongo_db import get_db_by_source, normalize_source
-from topic_fit import adjust_course_score_for_topic_fit, review_student_grade
+from topic_fit import REVIEW_VERSION, adjust_course_score_for_topic_fit, review_student_grade
 from student_api import (
     _effective_complete_assistant_ids,
     _normalize_achievement_badge_stats,
@@ -387,7 +387,11 @@ def _summarize_user(
     practice_tier = (profile or {}).get("practiceTier") or "尚未評級"
     cache = user.get("topicFitReview") if isinstance(user.get("topicFitReview"), dict) else {}
     cached_grade = cache.get("grade") if isinstance(cache.get("grade"), dict) else None
-    if cached_grade is not None and cache.get("score") is not None:
+    if (
+        cached_grade is not None
+        and cache.get("score") is not None
+        and int(cache.get("reviewVersion") or 0) >= REVIEW_VERSION
+    ):
         grade = cached_grade
         completed = int(cache.get("scoredTopicCount") or grade.get("completedTopicCount") or 0)
         second_advanced = int(

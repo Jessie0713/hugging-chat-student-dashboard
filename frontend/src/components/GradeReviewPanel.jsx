@@ -10,18 +10,18 @@ export function gradeReviewCopy(source) {
       loading: '正在檢查有效對話是否切題…',
       sectionTitle: '有效對話切題檢查',
       empty: '尚無有效對話可審查。',
-      allOk: '有效對話均與設定主題一致。',
+      allOk: '有效對話都有在練設定主題。',
       banner:
-        '內容不符合主題，以下主題不計入成績。請到主系統重新開聊天室重做對話練習：',
+        '以下主題幾乎沒有在練設定內容，不計入成績。請到主系統重新開聊天室重做對話練習：',
     }
   }
   return {
     loading: '正在檢查評級聊天室是否切題…',
     sectionTitle: '評級聊天室切題檢查',
     empty: '尚無評級聊天室可審查。',
-    allOk: '評級對話均與設定主題一致。',
+    allOk: '評級對話都有在練設定主題。',
     banner:
-      '內容不符合主題，以下主題不計入成績。請到主系統重新開聊天室重做對話練習：',
+      '以下主題幾乎沒有在練設定內容，不計入成績。請到主系統重新開聊天室重做對話練習：',
   }
 }
 
@@ -88,7 +88,7 @@ export default function GradeReviewPanel({
             ))}
           </Stack>
           <Typography sx={{ mt: 1, fontSize: 13, fontWeight: 800, color: colors.ink }}>
-            {adjustedScore != null ? `成績 ${adjustedScore} 分。不符主題不計入成績。` : '不符主題不計入成績。'}
+            {adjustedScore != null ? `成績 ${adjustedScore} 分。沒有在練的主題不計入成績。` : '沒有在練的主題不計入成績。'}
           </Typography>
         </Box>
       ) : reviewedRooms.length ? (
@@ -137,10 +137,20 @@ export default function GradeReviewPanel({
                   </Typography>
                   <Chip
                     size='small'
-                    label={r.needsRedo ? '不計分・請到主系統重做' : '切題'}
+                    label={
+                      r.needsRedo
+                        ? '不計分・請到主系統重做'
+                        : r.fit === 'related'
+                          ? '有碰邊・計分'
+                          : '切題'
+                    }
                     sx={{
                       fontWeight: 800,
-                      bgcolor: r.needsRedo ? colors.error : colors.leaf,
+                      bgcolor: r.needsRedo
+                        ? colors.error
+                        : r.fit === 'related'
+                          ? colors.amber
+                          : colors.leaf,
                       color: '#fff',
                     }}
                   />
