@@ -1,0 +1,12 @@
+{
+  "id": "v1",
+  "title": "課程規則與操作說明（初版）",
+  "promptVersion": "assistant-prompt-v1",
+  "files": [
+    "operations.md",
+    "themes-goals.md",
+    "badges-grades.md",
+    "topic-fit.md",
+    "faq.md"
+  ]
+}

@@ -4,6 +4,7 @@ import { useEffect, useRef } from 'react'
 import Header from '../components/Header'
 import AmbientDinoScheduler from '../components/AmbientDinoScheduler'
 import HabitatBackground from '../components/HabitatBackground'
+import AssistantPanel from '../components/AssistantPanel'
 import { invalidateAmbientContentCache } from '../lib/ambientContentFade'
 import { logDashboardEvent } from '../lib/dashboardLog'
 
@@ -95,6 +96,7 @@ export default function StudentLayout() {
       >
         <Header />
       </Box>
+      <AssistantPanel context='student' />
     </Box>
   )
 }

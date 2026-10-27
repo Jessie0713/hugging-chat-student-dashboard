@@ -9,19 +9,32 @@ import os
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+from contextlib import asynccontextmanager
+
 from student_api import router as student_router
 from cefr_api import router as cefr_router
 from teacher_api import router as teacher_router
+from assistant_api import router as assistant_router
 from db import fetch_one
 from azure_openai import azure_chat
 from mongo_db import get_client_by_source, ping_mongo_by_source
 
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    try:
+        from assistant_store import ensure_indexes
+        await ensure_indexes()
+    except Exception:
+        pass
+    yield
 
-app = FastAPI(title="HuggingChat Dashboard API")
+
+app = FastAPI(title="HuggingChat Dashboard API", lifespan=lifespan)
 app.include_router(student_router)
 app.include_router(cefr_router)
 app.include_router(teacher_router)
+app.include_router(assistant_router)
 frontend_origin = os.getenv("FRONTEND_ORIGIN", "http://localhost:5174")
 frontend_origins = [x.strip() for x in frontend_origin.split(",") if x.strip()]
 if not frontend_origins:

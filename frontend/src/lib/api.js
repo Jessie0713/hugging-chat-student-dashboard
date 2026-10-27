@@ -28,6 +28,16 @@ export async function apiGet(url, options = {}) {
   return r.json()
 }
 
+export async function apiPut(url, body, options = {}) {
+  const r = await fetch(`${API_BASE}${url}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
+    body: body ? JSON.stringify(body) : '{}',
+  })
+  if (!r.ok) throw new Error(await errorMessageFromResponse(r))
+  return r.json()
+}
+
 export async function apiPost(url, body, options = {}) {
   const r = await fetch(`${API_BASE}${url}`, {
     method: 'POST',

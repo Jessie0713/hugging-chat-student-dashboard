@@ -1,0 +1,108 @@
+{
+  "id": "teacher-graph-v1",
+  "title": "教師班級助教知識圖譜",
+  "nodes": [
+    {
+      "id": "class_progress",
+      "label": "班級進度總覽",
+      "aliases": ["班級", "整班", "進度", "總覽", "kpi", "名冊"],
+      "text": "教師先看名冊與上方 KPI：平均成績、完成主題、二次進階、英文佔比、總對話數。兩組合計時，等級／成績分布／學習趨勢用來比較變動等級與固定等級，不要用等級 KPI 去篩學生。"
+    },
+    {
+      "id": "unmet_students",
+      "label": "未達標學生",
+      "aliases": ["未達標", "還沒", "落後", "差很多", "哪些學生"],
+      "text": "未達標通常指課程白名單主題尚未完成有效對話、或練習建議的 5 題進階＋有效對話還沒到。名冊可看完成主題數、二次進階數、切題後成績。助手只給去識別摘要，不把單一學生完整對話公開給其他學生。"
+    },
+    {
+      "id": "rolling_vs_fixed",
+      "label": "變動／固定兩組",
+      "aliases": ["變動", "固定", "rolling", "fixed", "兩組", "比較"],
+      "text": "rolling_level 與 fixed_level 是不同 Mongo、不同評級邏輯，不可混用。變動等級看 agentCefr 評級聊天室；固定等級看學生選的目標練習等級與有效對話。切題審查房間定義也不同。"
+    },
+    {
+      "id": "cefr_tiers",
+      "label": "練習大階",
+      "aliases": ["cefr", "入門", "基礎", "進階", "高階", "b1", "b2", "等級"],
+      "text": "入門=PreA1；基礎=A1、A2、B1；進階=B2；高階=C1、C2、C1C2。B1 是基礎，B2 才是進階。固定等級選進階時，評估達進階或高階都算適配符合。"
+    },
+    {
+      "id": "practice_goal",
+      "label": "練習建議達標",
+      "aliases": ["練習建議", "五題", "5題", "達標", "有效對話"],
+      "text": "練習建議目標是 5 個不同課程主題達到進階且完成有效對話。固定等級還須在主系統選進階。這與守護龍「第二次評級 B2+」是分開的條件。"
+    },
+    {
+      "id": "guardian",
+      "label": "守護龍條件",
+      "aliases": ["守護龍", "二次進階", "第二次評級"],
+      "text": "守護龍看課程主題第二次 CEFR 評級是否達 B2 以上，最多 5 題×4=20 分。不要跟練習建議的 5 題達標混成同一件事。"
+    },
+    {
+      "id": "score_formula",
+      "label": "成績公式",
+      "aliases": ["成績", "分數", "108", "里程碑"],
+      "text": "成績最高 108=里程碑80＋守護龍20＋額外加成8，由既有計分服務計算。里程碑要主題數且查看儀表板配對次數都到。名冊分數應是切題審查後成績。"
+    },
+    {
+      "id": "badges",
+      "label": "獎章",
+      "aliases": ["獎章", "徽章"],
+      "text": "獎章由主系統條件達成後發放。切題審查可以不計入該主題成績，但不收回已拿到的獎章。所以獎章與成績可以不一致。"
+    },
+    {
+      "id": "topic_fit",
+      "label": "切題審查",
+      "aliases": ["切題", "跑題", "亂聊", "成績分頁"],
+      "text": "點名冊「成績」才做切題審查。onTopic 與 related 都計分；offTopic 不計該題分數，請學生到主系統重開房間。不要因缺少指定關鍵字就判不切題。助手聊天不會自動重算切題。"
+    },
+    {
+      "id": "dashboard_usage",
+      "label": "查看儀表板次數",
+      "aliases": ["查看儀表板", "pick", "enter", "page view"],
+      "text": "成績裡的查看儀表板次數是 48 小時內 practice_room_pick 與 practice_room_enter 配對。打開助手、問答、點讚、回饋、單純瀏覽頁面都不算。"
+    },
+    {
+      "id": "metrics",
+      "label": "語言指標",
+      "aliases": ["英文佔比", "詞彙", "輪次", "時長"],
+      "text": "英文佔比與詞彙豐富度只算學生發言。英文佔比=英文字母/(英文字母+漢字)。趨勢圖的語言指標是累積至當天。"
+    },
+    {
+      "id": "course_themes",
+      "label": "八個課程主題",
+      "aliases": ["主題", "白名單", "八個", "8個"],
+      "text": "課程進度只認 8 個白名單 assistant：Future Movement Planner、Panama Canal Story、VR Treatment Talk、EQ vs IQ Compare、Can Machines Think?、Handmade vs Machine Debate、Biomimicry Explainer、Product Design Talk。其他聊天室不算課程題。"
+    },
+    {
+      "id": "student_issues",
+      "label": "學生常見問題",
+      "aliases": ["常問", "困難", "回饋", "問題"],
+      "text": "學生常問成績怎麼算、差哪些主題、獎章為何高於成績、B1 是否進階。教師助手只提供去識別彙整。低評價只是調查線索，不代表學生說的規則是對的。"
+    },
+    {
+      "id": "teacher_actions",
+      "label": "教師可做的操作",
+      "aliases": ["怎麼看", "點成績", "名冊", "兩組合計"],
+      "text": "看名冊比對完成主題／二次進階／切題後成績；要細問某生切題請點該列「成績」。兩組合計用圖表比較兩組。不要叫教師去學生練習建議頁練口說。"
+    }
+  ],
+  "edges": [
+    {"from": "class_progress", "rel": "包含", "to": "unmet_students"},
+    {"from": "class_progress", "rel": "比較", "to": "rolling_vs_fixed"},
+    {"from": "class_progress", "rel": "使用", "to": "cefr_tiers"},
+    {"from": "unmet_students", "rel": "對照", "to": "practice_goal"},
+    {"from": "practice_goal", "rel": "不同於", "to": "guardian"},
+    {"from": "score_formula", "rel": "含", "to": "guardian"},
+    {"from": "score_formula", "rel": "含", "to": "dashboard_usage"},
+    {"from": "score_formula", "rel": "可低於", "to": "badges"},
+    {"from": "topic_fit", "rel": "影響", "to": "score_formula"},
+    {"from": "topic_fit", "rel": "不收回", "to": "badges"},
+    {"from": "student_issues", "rel": "常見於", "to": "score_formula"},
+    {"from": "student_issues", "rel": "常見於", "to": "topic_fit"},
+    {"from": "teacher_actions", "rel": "用來檢查", "to": "unmet_students"},
+    {"from": "teacher_actions", "rel": "用來檢查", "to": "topic_fit"},
+    {"from": "course_themes", "rel": "限定", "to": "practice_goal"},
+    {"from": "metrics", "rel": "顯示於", "to": "class_progress"}
+  ]
+}

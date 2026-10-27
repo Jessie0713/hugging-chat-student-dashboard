@@ -11,7 +11,10 @@ import {
   Typography,
 } from '@mui/material'
 import HabitatBackground from '../components/HabitatBackground'
+import AssistantPanel from '../components/AssistantPanel'
+import { apiPost } from '../lib/api'
 import { clearTeacherCode, getTeacherCode } from '../lib/teacherAuth'
+import { clearAssistantAuth, setAssistantToken } from '../lib/assistantAuth'
 import {
   buttonSecondarySx,
   colors,
@@ -33,7 +36,13 @@ export default function TeacherLayout() {
   useEffect(() => {
     if (!getTeacherCode()) {
       navigate('/', { replace: true })
+      return
     }
+    apiPost('/api/assistant/auth/teacher', { code: getTeacherCode() })
+      .then((d) => {
+        if (d?.token) setAssistantToken(d.token)
+      })
+      .catch(() => {})
   }, [navigate])
 
   return (
@@ -150,7 +159,10 @@ export default function TeacherLayout() {
               <Button
                 component={RouterLink}
                 to='/'
-                onClick={() => clearTeacherCode()}
+                onClick={() => {
+                  clearTeacherCode()
+                  clearAssistantAuth()
+                }}
                 sx={buttonSecondarySx}
               >
                 離開
@@ -159,6 +171,7 @@ export default function TeacherLayout() {
           </Toolbar>
         </AppBar>
       </Box>
+      <AssistantPanel context='teacher' />
     </Box>
   )
 }
