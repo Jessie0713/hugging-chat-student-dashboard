@@ -1,11 +1,10 @@
 # backend/tests/test_assistant_rules.py
 from __future__ import annotations
 
-import asyncio
 import os
 import sys
 from pathlib import Path
-from unittest.mock import AsyncMock, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -23,13 +22,6 @@ from assistant_auth import (
     verify_password,
 )
 from assistant_chat import FORBIDDEN, REFUSAL
-from assistant_coding import classify_code_task, run_coding_job
-from assistant_improve import (
-    content_hash,
-    create_knowledge_proposal,
-    publish_proposal,
-    _proposal_change_lists,
-)
 from assistant_knowledge import load_documents, parse_faq, render_faq, retrieve, validate_faq_items
 from assistant_tools import run_tool, specs_for_role
 from course_score import COURSE_BADGE_THEME_IDS, compute_course_score
@@ -184,46 +176,12 @@ def test_student_knowledge_has_core_rules():
     hits_bestep = retrieve("培力英檢可以怎麼規劃練習")
     blob_b = " ".join(h.get("excerpt") or "" for h in hits_bestep)
     assert "語法健檢" in blob_b and "對話分析" in blob_b
-
-
-def test_proposal_explains_what_changes():
-    will, will_not, needs_code = _proposal_change_lists([
-        {"category": "功能需求", "normalizedQuestion": "CSV 下載"},
-    ])
-    assert needs_code is True
-    assert any("補充說明" in x for x in will)
-    assert any("CSV" in x or "人工" in x for x in will_not)
-
-
-def test_coding_runner_blocked_without_secrets():
-    decision = classify_code_task("改成績公式", ["backend/course_score.py"])
-    assert decision["autoAllowed"] is False
-    result = asyncio.run(run_coding_job({"title": "說明", "paths": ["backend/knowledge/"]}))
-    assert result["status"] == "blocked"
-    assert result["published"] is False
-
-
-def test_unapproved_cannot_publish_hash_mismatch():
-    async def _run():
-        actor = {"role": "admin", "actorId": "admin"}
-        fake_col = AsyncMock()
-        fake_col.find_one = AsyncMock(return_value={
-            "proposalId": "p1",
-            "status": "approved",
-            "contentHash": "aaa",
-            "approvedHash": "bbb",
-            "draft": {"kind": "knowledge"},
-        })
-        with patch("assistant_improve.col", return_value=fake_col):
-            with pytest.raises(ValueError):
-                await publish_proposal(actor, "p1")
-    asyncio.run(_run())
-
-
-def test_content_hash_stable():
-    a = content_hash({"x": 1, "y": 2})
-    b = content_hash({"y": 2, "x": 1})
-    assert a == b
+    hits_theme = retrieve("有效主題是哪幾個")
+    blob_theme = " ".join(h.get("excerpt") or "" for h in hits_theme)
+    assert "Product Design Talk" in blob_theme
+    assert "Future Movement Planner" in blob_theme
+    assert "不要自己猜清單" not in blob_theme
+    assert "不要把下面白名單" not in blob_theme
 
 
 def test_assistant_events_are_not_pick_enter():

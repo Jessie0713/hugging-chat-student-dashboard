@@ -1,7 +1,5 @@
 import {
   Box,
-  Card,
-  CardContent,
   Chip,
   CircularProgress,
   LinearProgress,
@@ -10,28 +8,6 @@ import {
 } from '@mui/material'
 
 import { colors, radii, type } from '../theme/tokens'
-
-const panelSx = {
-  borderRadius: `${radii.lg}px`,
-  height: 360,
-  display: 'flex',
-  flexDirection: 'column',
-}
-
-const contentSx = {
-  flex: 1,
-  minHeight: 0,
-  overflowY: 'auto',
-  overflowX: 'hidden',
-  display: 'flex',
-  flexDirection: 'column',
-  pr: 0.5,
-  '&::-webkit-scrollbar': { width: 8 },
-  '&::-webkit-scrollbar-thumb': {
-    backgroundColor: 'rgba(0,0,0,0.2)',
-    borderRadius: 8,
-  },
-}
 
 const MILESTONE_ROWS = [
   { topics: 2, views: 2, score: 30 },
@@ -279,20 +255,5 @@ export function BadgeGradeSummary({
         有效主題 {topics}/8 · 查看儀表板 {usage} 次 · 第二次評級進階＋有效對話 {secondAdv}/5
       </Typography>
     </Stack>
-  )
-}
-
-export default function BadgeGradeCard({ gradeEstimate, loading, compact = false }) {
-  return (
-    <Card variant='outlined' sx={panelSx}>
-      <CardContent sx={contentSx}>
-        <BadgeGradeSummary
-          gradeEstimate={gradeEstimate}
-          loading={loading}
-          compact={compact}
-          showTitle
-        />
-      </CardContent>
-    </Card>
   )
 }

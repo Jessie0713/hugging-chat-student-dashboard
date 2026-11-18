@@ -68,6 +68,10 @@ npm run dev
 
 前端預設跑在 `http://localhost:5174`。
 
+## 功能與使用說明（論文／操作）
+
+完整頁面功能、成績規則與使用流程見 [`docs/儀表板功能與使用說明.md`](docs/儀表板功能與使用說明.md)。練習建議演算法見 [`docs/練習建議推薦機制.md`](docs/練習建議推薦機制.md)。
+
 ## 使用方式
 
 ### 測試帳號
@@ -135,7 +139,6 @@ npm run dev
 - `GET /api/{source}/student/{hfUserId}/conversations?skip=0&limit=20`
 - `GET /api/{source}/student/{hfUserId}/badges`
 - `POST /api/{source}/student/{hfUserId}/ai-advice`
-- `GET /api/{source}/mongo/ping`
 
 ## Docker（後端）
 

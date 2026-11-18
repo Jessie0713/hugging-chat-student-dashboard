@@ -8,16 +8,13 @@ load_dotenv(env_path)
 import os
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
 from contextlib import asynccontextmanager
 
 from student_api import router as student_router
 from cefr_api import router as cefr_router
 from teacher_api import router as teacher_router
 from assistant_api import router as assistant_router
-from db import fetch_one
-from azure_openai import azure_chat
-from mongo_db import get_client_by_source, ping_mongo_by_source
+from mongo_db import ping_mongo_by_source
 
 
 @asynccontextmanager
@@ -58,32 +55,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-class AnalyzeReq(BaseModel):
-    prompt: str
 
 @app.get("/api/health")
 def health():
     return {"status": "ok"}
 
-@app.get("/api/overview")
-def overview():
-    try:
-        row = fetch_one("SELECT COUNT(*) AS user_count FROM mdl_user;")
-        return {"user_count": row["user_count"] if row else None}
-    except Exception as e:
-        # 開發期先把錯誤丟回來，方便你定位（上線再拿掉）
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.post("/api/analyze")
-async def analyze(req: AnalyzeReq):
-    text = await azure_chat(req.prompt)
-    return {"text": text}
-
-@app.get("/api/{source}/mongo/databases")
-async def mongo_databases(source: str):
-    client = get_client_by_source(source)
-    dbs = await client.list_database_names()
-    return {"source": (source or "").strip().lower(), "databases": dbs}
 
 @app.get("/api/{source}/mongo/ping")
 async def mongo_ping(source: str):

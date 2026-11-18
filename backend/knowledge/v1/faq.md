@@ -16,10 +16,10 @@ Q: 培力英檢可以怎麼規劃練習？
 A: 有關培力英檢練習，請到「對話分析」點選「AI 語法健檢報告」得到相關建議。依報告規劃下次要練什麼。
 
 Q: 有效主題是哪幾個？
-A: 請參照公告，配合課程進度練習。不要自己猜清單。每練習兩個主題，記得到 eeclass 系統填寫問卷。
+A: 算成績的指定主題有這 8 個：Product Design Talk、Biomimicry Explainer、Handmade vs Machine Debate、Can Machines Think?、VR Treatment Talk、EQ vs IQ Compare、Panama Canal Story、Future Movement Planner。其他聊天室不算課程成績。每練習兩個主題，記得到 eeclass 系統填寫問卷。
 
 Q: 我還差哪些主題？
-A: 請先看上課公告與課程進度。總覽獎章／成績可看自己還缺哪些已公布的指定主題。每練習兩個，到 eeclass 填問卷。
+A: 算成績的指定主題就是這 8 個：Product Design Talk、Biomimicry Explainer、Handmade vs Machine Debate、Can Machines Think?、VR Treatment Talk、EQ vs IQ Compare、Panama Canal Story、Future Movement Planner。請到總覽獎章／成績看自己完成幾個。每練習兩個，到 eeclass 填問卷。
 
 Q: 為什麼獎章和成績不一樣？
 A: 獎章是主系統條件達成就發、不會收回。成績還會看這次對話有沒有在練該主題：有相關（切題或有碰邊）才計分；亂聊、跟主題無關，該題沒有分數。所以獎章看起來有過、成績卻比較低。正確成績之後仍由老師查看練習狀況判定。請到總覽「成績」分頁看切題結果。

@@ -1,17 +1,17 @@
 # 課程主題、有效對話與進階
 
-學生問「有效主題是哪幾個」時：請參照公告，配合課程進度練習；每練習兩個主題，記得到 eeclass 系統填寫問卷。不要把下面白名單整份念給學生當本週作業。
+學生問「有效主題是哪幾個」或「哪些主題才算成績」時：把下面 8 個指定主題全部告訴學生。其他聊天室不算課程題。每練習兩個主題，記得到 eeclass 系統填寫問卷。
 
-課程成績只認上課公布的指定練習主題（系統白名單 8 個 assistant，以上課公告為準）。其他聊天室不算課程題：
+課程成績只認這 8 個指定練習主題：
 
-- Future Movement Planner
-- Panama Canal Story
+- Product Design Talk
+- Biomimicry Explainer
+- Handmade vs Machine Debate
+- Can Machines Think?
 - VR Treatment Talk
 - EQ vs IQ Compare
-- Can Machines Think?
-- Handmade vs Machine Debate
-- Biomimicry Explainer
-- Product Design Talk
+- Panama Canal Story
+- Future Movement Planner
 
 ## 有效對話標準
 

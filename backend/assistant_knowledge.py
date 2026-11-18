@@ -201,25 +201,21 @@ def retrieve(query: str, *, version_id: str = DEFAULT_VERSION, limit: int = 4, d
 
 async def get_active_knowledge_version() -> dict[str, Any]:
     try:
-        doc = await col("knowledge").find_one({"status": "published"}, sort=[("publishedAt", -1)])
+        doc = await col("student_knowledge").find_one({"key": STUDENT_ACTIVE_KEY})
     except Exception:
         doc = None
     if doc:
         return {
-            "versionId": doc.get("versionId") or DEFAULT_VERSION,
+            "versionId": DEFAULT_VERSION,
             "promptVersion": doc.get("promptVersion") or "assistant-prompt-v1",
-            "contentHash": doc.get("contentHash") or "",
             "title": doc.get("title") or "",
-            "draftMarkdown": doc.get("draftMarkdown") or "",
             "baseVersionId": doc.get("baseVersionId") or DEFAULT_VERSION,
         }
     manifest = load_manifest(DEFAULT_VERSION)
     return {
         "versionId": DEFAULT_VERSION,
         "promptVersion": manifest.get("promptVersion") or "assistant-prompt-v1",
-        "contentHash": file_bundle_hash(DEFAULT_VERSION),
         "title": manifest.get("title") or DEFAULT_VERSION,
-        "draftMarkdown": "",
         "baseVersionId": DEFAULT_VERSION,
     }
 
@@ -242,62 +238,11 @@ async def retrieve_active(
             "title": graph.get("title") or version.get("title"),
             "knowledgeKind": "graph",
         }
-        extra = (version.get("draftMarkdown") or "").strip()
-        if extra:
-            hits = [{
-                "id": "published-supplement",
-                "title": "已發布補充",
-                "text": extra,
-                "excerpt": extra[:900],
-                "score": 2,
-                "source": "knowledge",
-            }] + hits
         return version, hits[:limit]
 
     docs = await get_active_documents()
     hits = retrieve(query, documents=docs, limit=limit)
-    extra = (version.get("draftMarkdown") or "").strip()
-    if extra:
-        hits = [{
-            "id": f"{version['versionId']}-draft",
-            "title": version.get("title") or "已發布補充",
-            "text": extra,
-            "excerpt": extra[:900],
-            "score": 2,
-        }] + hits
-        hits = hits[:limit]
     return version, hits
-
-
-def file_bundle_hash(version_id: str) -> str:
-    import hashlib
-
-    docs = load_documents(version_id)
-    h = hashlib.sha256()
-    for doc in docs:
-        h.update(doc["id"].encode())
-        h.update(b"\n")
-        h.update(doc["text"].encode("utf-8"))
-    return h.hexdigest()
-
-
-async def record_published_bundle(version_id: str, actor_id: str, prompt_version: str) -> dict[str, Any]:
-    payload = {
-        "versionId": version_id,
-        "promptVersion": prompt_version,
-        "contentHash": file_bundle_hash(version_id),
-        "status": "published",
-        "title": load_manifest(version_id).get("title"),
-        "publishedAt": utcnow(),
-        "publishedBy": actor_id,
-        "sourceFiles": True,
-    }
-    await col("knowledge").update_one(
-        {"versionId": version_id},
-        {"$set": payload},
-        upsert=True,
-    )
-    return payload
 
 
 async def get_active_documents() -> list[dict[str, str]]:

@@ -72,7 +72,7 @@
       "id": "course_themes",
       "label": "八個課程主題",
       "aliases": ["主題", "白名單", "八個", "8個"],
-      "text": "課程進度只認 8 個白名單 assistant：Future Movement Planner、Panama Canal Story、VR Treatment Talk、EQ vs IQ Compare、Can Machines Think?、Handmade vs Machine Debate、Biomimicry Explainer、Product Design Talk。其他聊天室不算課程題。"
+      "text": "課程進度只認 8 個白名單 assistant：Product Design Talk、Biomimicry Explainer、Handmade vs Machine Debate、Can Machines Think?、VR Treatment Talk、EQ vs IQ Compare、Panama Canal Story、Future Movement Planner。其他聊天室不算課程題。學生問有效主題時可以直接列出這 8 個。"
     },
     {
       "id": "student_issues",

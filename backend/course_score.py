@@ -8,14 +8,14 @@ from typing import Any
 # 獎章／里程碑只認這 8 個課程主題（assistantId）
 # 可用 env COURSE_BADGE_THEME_IDS=id1,id2,... 覆寫（逗號分隔）
 DEFAULT_COURSE_BADGE_THEMES: list[dict[str, str]] = [
-    {"id": "6a974e7833b25cbb33e62ee8", "name": "Future Movement Planner"},
-    {"id": "6a974e2d33b25cbb33e62ed5", "name": "Panama Canal Story"},
+    {"id": "6a974b1f33b25cbb33e62e1e", "name": "Product Design Talk"},
+    {"id": "6a974c0e33b25cbb33e62e5a", "name": "Biomimicry Explainer"},
+    {"id": "6a974cb033b25cbb33e62e7d", "name": "Handmade vs Machine Debate"},
+    {"id": "6a974d5233b25cbb33e62ea2", "name": "Can Machines Think?"},
     {"id": "6a974dd833b25cbb33e62ec2", "name": "VR Treatment Talk"},
     {"id": "6a974d9633b25cbb33e62eb1", "name": "EQ vs IQ Compare"},
-    {"id": "6a974d5233b25cbb33e62ea2", "name": "Can Machines Think?"},
-    {"id": "6a974cb033b25cbb33e62e7d", "name": "Handmade vs Machine Debate"},
-    {"id": "6a974c0e33b25cbb33e62e5a", "name": "Biomimicry Explainer"},
-    {"id": "6a974b1f33b25cbb33e62e1e", "name": "Product Design Talk"},
+    {"id": "6a974e2d33b25cbb33e62ed5", "name": "Panama Canal Story"},
+    {"id": "6a974e7833b25cbb33e62ee8", "name": "Future Movement Planner"},
 ]
 
 

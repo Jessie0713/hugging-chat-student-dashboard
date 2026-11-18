@@ -2,6 +2,7 @@
 """受控查詢工具：一律呼叫既有業務服務，並依 actor 檢查歸屬。"""
 from __future__ import annotations
 
+import re
 from typing import Any, Callable, Awaitable
 
 from fastapi import HTTPException
@@ -338,6 +339,13 @@ async def get_authorized_class_progress(actor: dict[str, Any], args: dict) -> di
     }
 
 
+def _deidentify(text: str) -> str:
+    t = text or ""
+    t = re.sub(r"[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}", "[email]", t, flags=re.I)
+    t = re.sub(r"\b\d{6,}\b", "[id]", t)
+    return t[:200]
+
+
 async def get_authorized_class_issue_summary(actor: dict[str, Any], args: dict) -> dict[str, Any]:
     require_teacher_or_admin(actor)
     from assistant_store import col
@@ -346,23 +354,27 @@ async def get_authorized_class_issue_summary(actor: dict[str, Any], args: dict) 
     query: dict[str, Any] = {}
     if source in ("rolling_level", "fixed_level"):
         query["source"] = source
-    clusters = await col("clusters").find(query).sort("updatedAt", -1).to_list(length=20)
     feedback = await col("feedback").find(query).sort("createdAt", -1).to_list(length=50)
     helpful = sum(1 for f in feedback if f.get("helpful") is True)
     unhelpful = sum(1 for f in feedback if f.get("helpful") is False)
+    questions = []
+    seen: set[str] = set()
+    for f in feedback:
+        q = _deidentify(str(f.get("question") or f.get("note") or "")).strip()
+        if not q or q in seen:
+            continue
+        seen.add(q)
+        questions.append({
+            "question": q,
+            "helpful": f.get("helpful"),
+            "category": f.get("category"),
+        })
+        if len(questions) >= 12:
+            break
     return {
         "source": source or "all",
         "feedbackCounts": {"helpful": helpful, "unhelpful": unhelpful, "total": len(feedback)},
-        "clusters": [
-            {
-                "clusterKey": c.get("clusterKey"),
-                "label": c.get("label") or c.get("normalizedQuestion"),
-                "count": c.get("count"),
-                "category": c.get("category"),
-            }
-            for c in clusters
-            if not c.get("rawStudentText")
-        ],
+        "recentQuestions": questions,
         "privacy": "僅去識別彙整，不含其他學生原話。",
     }
 

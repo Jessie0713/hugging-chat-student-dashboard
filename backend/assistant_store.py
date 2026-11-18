@@ -1,10 +1,9 @@
 # backend/assistant_store.py
-"""助手與改版流程的 Mongo 集合（營運資料，與 rolling/fixed 學生資料分開標記）。"""
+"""助手營運資料的 Mongo 集合（與 rolling/fixed 學生資料分開標記）。"""
 from __future__ import annotations
 
 import os
 from datetime import datetime, timedelta, timezone
-from typing import Any
 
 from mongo_db import get_db_by_source, normalize_source
 
@@ -12,13 +11,7 @@ COLLECTIONS = {
     "sessions": "dashboard_assistant_sessions",
     "messages": "dashboard_assistant_messages",
     "feedback": "dashboard_assistant_feedback",
-    "clusters": "dashboard_issue_clusters",
-    "knowledge": "dashboard_knowledge_versions",
-    "proposals": "dashboard_change_proposals",
-    "releases": "dashboard_release_history",
-    "jobs": "dashboard_improvement_jobs",
     "admins": "dashboard_admins",
-    "settings": "dashboard_assistant_settings",
     "graph": "dashboard_teacher_graph",
     "student_knowledge": "dashboard_student_knowledge",
 }
@@ -55,13 +48,7 @@ async def ensure_indexes() -> None:
     sessions = col("sessions")
     messages = col("messages")
     feedback = col("feedback")
-    clusters = col("clusters")
-    knowledge = col("knowledge")
-    proposals = col("proposals")
-    releases = col("releases")
-    jobs = col("jobs")
     admins = col("admins")
-    settings = col("settings")
     graph = col("graph")
     student_knowledge = col("student_knowledge")
 
@@ -72,24 +59,10 @@ async def ensure_indexes() -> None:
     await messages.create_index([("sessionId", 1), ("createdAt", 1)])
     await messages.create_index("createdAt", expireAfterSeconds=ttl)
 
-    await feedback.create_index([("processed", 1), ("createdAt", 1)])
     await feedback.create_index([("sessionId", 1), ("messageId", 1), ("createdAt", -1)])
     await feedback.create_index("createdAt", expireAfterSeconds=ttl)
 
-    await clusters.create_index("clusterKey", unique=True)
-    await clusters.create_index("updatedAt")
-
-    await knowledge.create_index("versionId", unique=True)
-    await knowledge.create_index([("status", 1), ("createdAt", -1)])
-
-    await proposals.create_index("proposalId", unique=True)
-    await proposals.create_index([("status", 1), ("createdAt", -1)])
-    await proposals.create_index("contentHash")
-    await jobs.create_index("jobKey", unique=True)
-    await jobs.create_index([("status", 1), ("createdAt", -1)])
-    await releases.create_index("createdAt")
     await admins.create_index("username", unique=True)
-    await settings.create_index("key", unique=True)
     await graph.create_index("key", unique=True)
     await student_knowledge.create_index("key", unique=True)
 
@@ -100,18 +73,3 @@ def utcnow() -> datetime:
 
 def expires_at() -> datetime:
     return utcnow() + timedelta(days=retention_days())
-
-
-async def get_setting(key: str, default: Any = None) -> Any:
-    doc = await col("settings").find_one({"key": key})
-    if not doc:
-        return default
-    return doc.get("value", default)
-
-
-async def set_setting(key: str, value: Any) -> None:
-    await col("settings").update_one(
-        {"key": key},
-        {"$set": {"key": key, "value": value, "updatedAt": utcnow()}},
-        upsert=True,
-    )
