@@ -8,11 +8,15 @@ import Badges from './pages/Badges'
 import PracticeNextPage from './pages/PracticeNextPage'
 import TeacherLayout from './pages/TeacherLayout'
 import TeacherRoster from './pages/TeacherRoster'
+import AdminLogin from './pages/AdminLogin'
+import AdminReview from './pages/AdminReview'
 
 export default function App() {
   return (
     <Routes>
       <Route path='/' element={<Home />} />
+      <Route path='/admin/login' element={<AdminLogin />} />
+      <Route path='/admin' element={<AdminReview />} />
 
       <Route path='/teacher' element={<Navigate to='/teacher/rolling_level' replace />} />
       <Route path='/teacher/:source' element={<TeacherLayout />}>

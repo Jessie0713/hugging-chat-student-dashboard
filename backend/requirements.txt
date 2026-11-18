@@ -6,3 +6,5 @@ sshtunnel
 pymysql
 paramiko<4
 motor
+pytest
+pytest-asyncio
